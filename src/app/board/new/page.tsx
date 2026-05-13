@@ -2,17 +2,25 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { seedTemplates, getTemplates, createRoom, BoardRecord } from "@/lib/db";
+import { seedTemplates, getTemplates, getMyBoards, createRoom, BoardRecord } from "@/lib/db";
 
 export default function NewBoardPage() {
   const router = useRouter();
   const [templates, setTemplates] = useState<BoardRecord[]>([]);
+  const [myBoards, setMyBoards] = useState<BoardRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    seedTemplates().then(() => getTemplates()).then(setTemplates).catch(console.error).finally(() => setLoading(false));
+    const load = async () => {
+      await seedTemplates();
+      const [tmpl, mine] = await Promise.all([getTemplates(), getMyBoards()]);
+      setTemplates(tmpl);
+      setMyBoards(mine);
+      setLoading(false);
+    };
+    load();
   }, []);
 
   async function handleCreate(board: BoardRecord) {
@@ -46,6 +54,23 @@ export default function NewBoardPage() {
           <div className="text-center py-8"><div className="w-6 h-6 border-2 border-stone-700 border-t-transparent rounded-full animate-spin mx-auto" /></div>
         ) : (
           <div className="space-y-6">
+            {/* My custom boards */}
+            {myBoards.length > 0 && (
+              <div>
+                <h2 className="text-sm font-bold text-stone-500 uppercase mb-2">我的棋盘</h2>
+                <div className="space-y-2">
+                  {myBoards.map((b) => (
+                    <button key={b.id} onClick={() => handleCreate(b)} disabled={creating}
+                      className="w-full p-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-left bg-white transition-colors">
+                      <div className="font-semibold">{b.name}</div>
+                      <div className="text-xs text-stone-500 mt-1">{b.player_count}人 · 自定义</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Built-in templates */}
             {twoPlayer.length > 0 && (
               <div>
                 <h2 className="text-sm font-bold text-stone-500 uppercase mb-2">双人棋盘</h2>
@@ -54,7 +79,7 @@ export default function NewBoardPage() {
                     <button key={t.id} onClick={() => handleCreate(t)} disabled={creating}
                       className="w-full p-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-left bg-white transition-colors">
                       <div className="font-semibold">{t.name}</div>
-                      <div className="text-xs text-stone-500 mt-1">{t.description} · {t.board_size}×{t.board_size} · {t.player_count}人</div>
+                      <div className="text-xs text-stone-500 mt-1">{t.description}</div>
                     </button>
                   ))}
                 </div>
@@ -68,12 +93,14 @@ export default function NewBoardPage() {
                     <button key={t.id} onClick={() => handleCreate(t)} disabled={creating}
                       className="w-full p-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-left bg-white transition-colors">
                       <div className="font-semibold">{t.name}</div>
-                      <div className="text-xs text-stone-500 mt-1">{t.description} · {t.board_size}×{t.board_size} · {t.player_count}人</div>
+                      <div className="text-xs text-stone-500 mt-1">{t.description}</div>
                     </button>
                   ))}
                 </div>
               </div>
             )}
+
+            {/* Custom board entry */}
             <button onClick={() => router.push("/board/edit")} className="w-full p-4 rounded-xl border-2 border-dashed border-stone-300 hover:border-stone-500 text-left text-stone-600 bg-white">
               <div className="font-semibold">+ 自定义棋盘</div>
               <div className="text-xs text-stone-400 mt-1">从头创建，自定义格子内容和规则</div>
