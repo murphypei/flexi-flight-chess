@@ -24,6 +24,7 @@ export default function RoomPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [boardId, setBoardId] = useState("");
+  const [boardName, setBoardName] = useState("");
   const [playerCount, setPlayerCount] = useState(2);
   const [myPlayerIdx, setMyPlayerIdx] = useState(-1);
   const [myName, setMyName] = useState("");
@@ -53,6 +54,7 @@ export default function RoomPage() {
       if (!board) { setError("棋盘不存在"); setLoading(false); return; }
 
       setBoardId(board.id);
+      setBoardName(board.name);
       setPlayerCount(board.player_count);
       setCells(board.cells);
       if (board.rules) {
@@ -163,7 +165,10 @@ export default function RoomPage() {
         {/* Header */}
         <header className="flex items-center justify-between mb-3">
           <div className="flex items-baseline gap-2">
-            <h1 className="text-xl font-bold">飞行棋</h1>
+            <div>
+              <h1 className="text-xl font-bold leading-tight">飞行棋</h1>
+              {boardName && <p className="text-xs text-stone-500">{boardName} · {playerCount}人</p>}
+            </div>
             <button onClick={() => { navigator.clipboard.writeText(code); alert("已复制"); }} className="text-sm font-bold text-stone-700 bg-white px-3 py-1 rounded-lg tracking-widest">
               {code} 📋
             </button>

@@ -21,6 +21,8 @@ export interface BoardRecord {
     description?: string;
   };
   is_template: boolean;
+  is_public: boolean;
+  owner_id: string | null;
   created_at?: string;
 }
 
@@ -52,23 +54,19 @@ export interface PlayerRecord {
 const TEMPLATES: BoardRecord[] = [
   {
     id: "00000000-0000-0000-0000-000000000001",
-    name: "经典双人棋盘",
-    description: "9×9 回字形，2人对战",
-    player_count: 2,
-    board_size: 9,
+    name: "经典双人棋盘", description: "9×9 回字形，2人对战",
+    player_count: 2, board_size: 9,
     cells: buildCells({}, undefined, 2),
     rules: { flySteps: FLY_STEPS, retreatSteps: RETREAT_STEPS, description: "标准规则：飞行+3，回退-2" },
-    is_template: true,
+    is_template: true, is_public: true, owner_id: null,
   },
   {
     id: "00000000-0000-0000-0000-000000000002",
-    name: "经典四人棋盘",
-    description: "9×9 回字形，4人对战",
-    player_count: 4,
-    board_size: 9,
+    name: "经典四人棋盘", description: "9×9 回字形，4人对战",
+    player_count: 4, board_size: 9,
     cells: buildCells({}, undefined, 4),
     rules: { flySteps: FLY_STEPS, retreatSteps: RETREAT_STEPS, description: "标准规则：飞行+3，回退-2" },
-    is_template: true,
+    is_template: true, is_public: true, owner_id: null,
   },
 ];
 
@@ -96,8 +94,13 @@ export async function getBoard(id: string): Promise<BoardRecord | null> {
   return data as BoardRecord;
 }
 
-export async function getMyBoards(): Promise<BoardRecord[]> {
-  const { data } = await supabase.from("boards").select("*").eq("is_template", false).order("created_at", { ascending: false });
+export async function getMyBoards(ownerId: string): Promise<BoardRecord[]> {
+  const { data } = await supabase.from("boards").select("*").eq("is_template", false).eq("owner_id", ownerId).order("created_at", { ascending: false });
+  return (data || []) as BoardRecord[];
+}
+
+export async function getPublicBoards(): Promise<BoardRecord[]> {
+  const { data } = await supabase.from("boards").select("*").eq("is_template", false).eq("is_public", true).order("created_at", { ascending: false });
   return (data || []) as BoardRecord[];
 }
 
@@ -109,6 +112,11 @@ export async function createBoard(board: Omit<BoardRecord, "id" | "created_at">)
 
 export async function updateBoard(id: string, updates: Partial<BoardRecord>) {
   const { error } = await supabase.from("boards").update(updates).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteBoard(id: string) {
+  const { error } = await supabase.from("boards").delete().eq("id", id);
   if (error) throw error;
 }
 

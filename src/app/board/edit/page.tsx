@@ -6,6 +6,8 @@ import {
   BOARD_SIZE, Cell, CellType, CENTER_INDEX, indexToGrid, makePlayers, RING_LENGTH,
 } from "@/lib/board";
 import { createBoard, getBoard, updateBoard } from "@/lib/db";
+import { FLY_STEPS, RETREAT_STEPS } from "@/lib/board";
+import { getSession } from "@/lib/auth";
 
 const CELL_COLORS: Record<CellType, string> = {
   normal: "bg-white border-stone-300",
@@ -35,15 +37,38 @@ export default function BoardEditPage() {
   const [editType, setEditType] = useState<CellType>("normal");
   const [boardName, setBoardName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [flySteps, setFlySteps] = useState(FLY_STEPS);
+  const [retreatSteps, setRetreatSteps] = useState(RETREAT_STEPS);
+  const [isPublic, setIsPublic] = useState(false);
+  const [showRules, setShowRules] = useState(false);
 
   const startIndices = useMemo(() => {
     const players = makePlayers(playerCount);
     return new Set(players.map((p) => p.startIndex));
   }, [playerCount]);
 
-  // Initialize empty cells
+  // Load existing board if ?id=xxx
   useEffect(() => {
-    if (!authed || step !== "edit") return;
+    const id = new URLSearchParams(window.location.search).get("id");
+    if (!id) return;
+    setEditId(id);
+    getBoard(id).then((b) => {
+      if (b) {
+        setBoardName(b.name);
+        setPlayerCount(b.player_count as 2 | 4);
+        setCells(b.cells);
+        if (b.rules?.flySteps) setFlySteps(b.rules.flySteps);
+        if (b.rules?.retreatSteps) setRetreatSteps(b.rules.retreatSteps);
+        setAuthed(true);
+        setStep("edit");
+      }
+    });
+  }, []);
+
+  // Initialize empty cells for new board
+  useEffect(() => {
+    if (!authed || step !== "edit" || editId) return;
     const newCells: Cell[] = [];
     for (let i = 0; i < RING_LENGTH; i++) {
       const isStart = startIndices.has(i);
@@ -56,7 +81,7 @@ export default function BoardEditPage() {
     }
     newCells.push({ index: CENTER_INDEX, row: Math.ceil(BOARD_SIZE / 2), col: Math.ceil(BOARD_SIZE / 2), type: "end" });
     setCells(newCells);
-  }, [authed, step, playerCount, startIndices]);
+  }, [authed, step, playerCount, startIndices, editId]);
 
   function handleAuth() {
     const pwd = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "admin123";
@@ -95,20 +120,51 @@ export default function BoardEditPage() {
   }
 
   async function handleSave() {
+    const user = getSession();
+    if (!user) { alert("请先登录"); return; }
     if (!boardName.trim()) { alert("请输入棋盘名称"); return; }
     setSaving(true);
     try {
-      const result = await createBoard({
-        name: boardName.trim(),
+      if (editId) {
+        await updateBoard(editId, {
+          name: boardName.trim(), player_count: playerCount, is_public: isPublic,
+          cells, rules: { flySteps, retreatSteps },
+        } as any);
+        alert("已更新！");
+      } else {
+        await createBoard({
+          name: boardName.trim(),
+          description: `${BOARD_SIZE}×${BOARD_SIZE} 回字形，${playerCount}人自定义`,
+          player_count: playerCount, board_size: BOARD_SIZE,
+          cells, rules: { flySteps, retreatSteps },
+          is_template: false, is_public: isPublic, owner_id: user.id,
+        });
+        alert("保存成功！");
+      }
+      router.push("/board/new");
+    } catch (e: any) {
+      alert("保存失败: " + (e.message || ""));
+    }
+    setSaving(false);
+  }
+
+  async function handleSaveAs() {
+    const user = getSession();
+    if (!user) { alert("请先登录"); return; }
+    if (!boardName.trim()) { alert("请输入棋盘名称"); return; }
+    const newName = prompt("新棋盘名称：", boardName + " (副本)");
+    if (!newName) return;
+    setSaving(true);
+    try {
+      await createBoard({
+        name: newName.trim(),
         description: `${BOARD_SIZE}×${BOARD_SIZE} 回字形，${playerCount}人自定义`,
-        player_count: playerCount,
-        board_size: BOARD_SIZE,
-        cells,
-        rules: {},
-        is_template: false,
+        player_count: playerCount, board_size: BOARD_SIZE,
+        cells, rules: { flySteps, retreatSteps },
+        is_template: false, is_public: isPublic, owner_id: user.id,
       });
-      alert("保存成功！");
-      router.push(`/board/new?id=${result.id}`);
+      alert("副本已保存！");
+      router.push("/board/new");
     } catch (e: any) {
       alert("保存失败: " + (e.message || ""));
     }
@@ -161,9 +217,36 @@ export default function BoardEditPage() {
         </header>
 
         {/* Board name */}
-        <div className="mb-4">
+        <div className="mb-3">
           <input value={boardName} onChange={(e) => setBoardName(e.target.value)} placeholder="棋盘名称（如：我的专属棋盘）" className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:border-stone-700 focus:outline-none text-sm bg-white" maxLength={20} />
         </div>
+
+        {/* Public toggle */}
+        <label className="flex items-center gap-2 mb-3 cursor-pointer">
+          <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} className="w-4 h-4 rounded border-stone-300" />
+          <span className="text-sm text-stone-600">公开棋盘（其他人可见）</span>
+        </label>
+
+        {/* Rules toggle */}
+        <button onClick={() => setShowRules(!showRules)} className="w-full text-sm text-stone-500 hover:text-stone-700 mb-3">
+          {showRules ? "▲ 收起规则设置" : "▼ 规则设置"}
+        </button>
+        {showRules && (
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200 mb-3 space-y-3">
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-stone-700 w-20">飞行步数</label>
+              <input type="number" value={flySteps} onChange={(e) => setFlySteps(Number(e.target.value))} min={1} max={10}
+                className="w-20 px-3 py-2 rounded-lg border border-stone-300 text-sm text-center" />
+              <span className="text-xs text-stone-400">落地后额外前进</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-stone-700 w-20">后退步数</label>
+              <input type="number" value={retreatSteps} onChange={(e) => setRetreatSteps(Number(e.target.value))} min={1} max={10}
+                className="w-20 px-3 py-2 rounded-lg border border-stone-300 text-sm text-center" />
+              <span className="text-xs text-stone-400">落地后回退</span>
+            </div>
+          </div>
+        )}
 
         {/* Board preview */}
         <div className="bg-stone-50 p-3 rounded-2xl border border-stone-300 shadow-lg mb-4">
@@ -247,10 +330,21 @@ export default function BoardEditPage() {
           </div>
         )}
 
-        {/* Save */}
-        <button onClick={handleSave} disabled={saving} className="w-full py-3 bg-stone-900 text-white rounded-xl font-semibold disabled:opacity-50">
-          {saving ? "保存中..." : "保存棋盘"}
-        </button>
+        {/* Save / Save As */}
+        {editId ? (
+          <div className="flex gap-2">
+            <button onClick={handleSave} disabled={saving} className="flex-1 py-3 bg-stone-700 text-white rounded-xl font-semibold disabled:opacity-50 text-sm">
+              {saving ? "保存中..." : "保存（覆盖）"}
+            </button>
+            <button onClick={handleSaveAs} disabled={saving} className="flex-1 py-3 bg-stone-900 text-white rounded-xl font-semibold disabled:opacity-50 text-sm">
+              另存为...
+            </button>
+          </div>
+        ) : (
+          <button onClick={handleSave} disabled={saving} className="w-full py-3 bg-stone-900 text-white rounded-xl font-semibold disabled:opacity-50">
+            {saving ? "保存中..." : "保存棋盘"}
+          </button>
+        )}
 
         <button onClick={() => router.push("/board/new")} className="w-full text-sm text-stone-500 py-2">← 返回棋盘列表</button>
       </div>
