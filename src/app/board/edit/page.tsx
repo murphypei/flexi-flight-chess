@@ -9,15 +9,6 @@ import { createBoard, getBoard, updateBoard } from "@/lib/db";
 import { FLY_STEPS, RETREAT_STEPS } from "@/lib/board";
 import { getSession } from "@/lib/auth";
 
-const CELL_COLORS: Record<CellType, string> = {
-  normal: "bg-white border-stone-300",
-  start: "border-stone-700",
-  safe: "bg-rose-100 border-rose-400",
-  fly: "bg-cyan-100 border-cyan-400",
-  retreat: "bg-amber-100 border-amber-400",
-  end: "bg-amber-200 border-amber-500",
-};
-
 const TYPES: { value: CellType; label: string; icon: string }[] = [
   { value: "normal", label: "普通", icon: "📝" },
   { value: "fly", label: "飞行 +3", icon: "✈" },
@@ -27,10 +18,10 @@ const TYPES: { value: CellType; label: string; icon: string }[] = [
 
 export default function BoardEditPage() {
   const router = useRouter();
-  const [password, setPassword] = useState("");
-  const [authed, setAuthed] = useState(false);
+  const user = getSession();
+  const [initDone, setInitDone] = useState(false);
   const [playerCount, setPlayerCount] = useState<2 | 4>(2);
-  const [step, setStep] = useState<"password" | "players" | "edit">("password");
+  const [step, setStep] = useState<"players" | "edit">("players");
   const [cells, setCells] = useState<Cell[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
@@ -42,33 +33,44 @@ export default function BoardEditPage() {
   const [retreatSteps, setRetreatSteps] = useState(RETREAT_STEPS);
   const [isPublic, setIsPublic] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  const [loadError, setLoadError] = useState("");
+
+  // Read URL params on client mount — useState initializers can't use window (SSR)
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("id");
+    if (id) {
+      setEditId(id);
+      setStep("edit");
+    }
+    setInitDone(true);
+  }, []);
 
   const startIndices = useMemo(() => {
     const players = makePlayers(playerCount);
     return new Set(players.map((p) => p.startIndex));
   }, [playerCount]);
 
-  // Load existing board if ?id=xxx
+  // Load existing board if editId is set
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("id");
-    if (!id) return;
-    setEditId(id);
-    getBoard(id).then((b) => {
-      if (b) {
-        setBoardName(b.name);
-        setPlayerCount(b.player_count as 2 | 4);
-        setCells(b.cells);
-        if (b.rules?.flySteps) setFlySteps(b.rules.flySteps);
-        if (b.rules?.retreatSteps) setRetreatSteps(b.rules.retreatSteps);
-        setAuthed(true);
-        setStep("edit");
-      }
+    if (!editId) return;
+    const u = getSession();
+    if (!u) return;
+    getBoard(editId).then((b) => {
+      if (!b) { setLoadError("棋盘不存在"); return; }
+      if (b.owner_id !== u.id) { setLoadError("无权编辑此棋盘"); return; }
+      setBoardName(b.name);
+      setPlayerCount(b.player_count as 2 | 4);
+      setCells(b.cells);
+      if (b.rules?.flySteps) setFlySteps(b.rules.flySteps);
+      if (b.rules?.retreatSteps) setRetreatSteps(b.rules.retreatSteps);
+      setIsPublic(b.is_public);
     });
-  }, []);
+  }, [editId]);
 
-  // Initialize empty cells for new board
+  // Initialize empty cells for new board — only after initDone confirms no ?id=
   useEffect(() => {
-    if (!authed || step !== "edit" || editId) return;
+    if (!initDone || editId) return;
+    if (step !== "edit") return;
     const newCells: Cell[] = [];
     for (let i = 0; i < RING_LENGTH; i++) {
       const isStart = startIndices.has(i);
@@ -81,17 +83,7 @@ export default function BoardEditPage() {
     }
     newCells.push({ index: CENTER_INDEX, row: Math.ceil(BOARD_SIZE / 2), col: Math.ceil(BOARD_SIZE / 2), type: "end" });
     setCells(newCells);
-  }, [authed, step, playerCount, startIndices, editId]);
-
-  function handleAuth() {
-    const pwd = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "admin123";
-    if (password === pwd) {
-      setAuthed(true);
-      setStep("players");
-    } else {
-      alert("密码错误");
-    }
-  }
+  }, [initDone, step, playerCount, startIndices, editId]);
 
   function handlePlayerSelect(count: 2 | 4) {
     setPlayerCount(count);
@@ -110,8 +102,8 @@ export default function BoardEditPage() {
     const newCells = cells.map((c) => {
       if (c.index !== selectedIdx) return c;
       if (editType === "normal") return { ...c, type: "normal" as CellType, label: editText, effect: undefined };
-      if (editType === "fly") return { ...c, type: "fly" as CellType, label: "", effect: { target: (c.index + 3) % RING_LENGTH } };
-      if (editType === "retreat") return { ...c, type: "retreat" as CellType, label: "", effect: { steps: 2 } };
+      if (editType === "fly") return { ...c, type: "fly" as CellType, label: "", effect: { target: (c.index + flySteps) % RING_LENGTH } };
+      if (editType === "retreat") return { ...c, type: "retreat" as CellType, label: "", effect: { steps: retreatSteps } };
       if (editType === "safe") return { ...c, type: "safe" as CellType, label: "", effect: undefined };
       return c;
     });
@@ -120,7 +112,6 @@ export default function BoardEditPage() {
   }
 
   async function handleSave() {
-    const user = getSession();
     if (!user) { alert("请先登录"); return; }
     if (!boardName.trim()) { alert("请输入棋盘名称"); return; }
     setSaving(true);
@@ -149,7 +140,6 @@ export default function BoardEditPage() {
   }
 
   async function handleSaveAs() {
-    const user = getSession();
     if (!user) { alert("请先登录"); return; }
     if (!boardName.trim()) { alert("请输入棋盘名称"); return; }
     const newName = prompt("新棋盘名称：", boardName + " (副本)");
@@ -171,15 +161,37 @@ export default function BoardEditPage() {
     setSaving(false);
   }
 
-  if (!authed || step === "password") {
+  // Not logged in
+  if (!user) {
     return (
       <main className="min-h-screen flex items-center justify-center p-4" style={{ background: "linear-gradient(135deg, #FEF3E2 0%, #FDF8EE 50%, #F0F4FF 100%)" }}>
-        <div className="bg-white rounded-2xl p-6 shadow-lg max-w-sm w-full">
-          <h1 className="text-xl font-bold mb-4">管理员验证</h1>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="输入管理密码" className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:border-stone-700 focus:outline-none text-sm mb-3" onKeyDown={(e) => e.key === "Enter" && handleAuth()} />
-          <button onClick={handleAuth} className="w-full py-3 bg-stone-900 text-white rounded-xl font-semibold">确认</button>
-          <button onClick={() => router.push("/board/new")} className="w-full text-sm text-stone-500 mt-3">← 返回</button>
+        <div className="bg-white rounded-2xl p-6 shadow-lg max-w-sm w-full text-center">
+          <h1 className="text-xl font-bold mb-2">请先登录</h1>
+          <p className="text-sm text-stone-500 mb-4">登录后可创建和编辑自定义棋盘</p>
+          <button onClick={() => router.push("/login")} className="w-full py-3 bg-stone-900 text-white rounded-xl font-semibold text-sm">登录 / 注册</button>
+          <button onClick={() => router.push("/board/new")} className="w-full text-sm text-stone-500 mt-3">← 返回棋盘列表</button>
         </div>
+      </main>
+    );
+  }
+
+  // Load error (board not found or not owned)
+  if (loadError) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-4" style={{ background: "linear-gradient(135deg, #FEF3E2 0%, #FDF8EE 50%, #F0F4FF 100%)" }}>
+        <div className="bg-white rounded-2xl p-6 shadow-lg max-w-sm w-full text-center">
+          <p className="text-red-500 mb-4">{loadError}</p>
+          <button onClick={() => router.push("/board/new")} className="px-4 py-2 bg-stone-900 text-white rounded-lg">← 返回棋盘列表</button>
+        </div>
+      </main>
+    );
+  }
+
+  // Still initializing — wait for URL param detection after mount
+  if (!initDone) {
+    return (
+      <main className="min-h-screen flex items-center justify-center" style={{ background: "linear-gradient(135deg, #FEF3E2 0%, #FDF8EE 50%, #F0F4FF 100%)" }}>
+        <div className="w-6 h-6 border-2 border-stone-700 border-t-transparent rounded-full animate-spin" />
       </main>
     );
   }
@@ -201,6 +213,15 @@ export default function BoardEditPage() {
           </div>
           <button onClick={() => router.push("/board/new")} className="w-full text-sm text-stone-500 mt-3">← 返回</button>
         </div>
+      </main>
+    );
+  }
+
+  // Editing an existing board — wait for data to load
+  if (editId && cells.length === 0) {
+    return (
+      <main className="min-h-screen flex items-center justify-center" style={{ background: "linear-gradient(135deg, #FEF3E2 0%, #FDF8EE 50%, #F0F4FF 100%)" }}>
+        <div className="w-6 h-6 border-2 border-stone-700 border-t-transparent rounded-full animate-spin" />
       </main>
     );
   }
@@ -259,7 +280,12 @@ export default function BoardEditPage() {
             }}
           >
             {cells.map((cell) => {
-              if (cell.type === "end") return <div key={cell.index} style={{ gridRow: cell.row, gridColumn: cell.col }} />;
+              if (cell.type === "end") return (
+                <div key={cell.index} style={{ gridRow: cell.row, gridColumn: cell.col }}
+                  className="flex items-center justify-center bg-stone-800 rounded-full">
+                  <span className="text-amber-300 text-lg">★</span>
+                </div>
+              );
               const isStart = cell.type === "start";
               const isSelected = cell.index === selectedIdx;
               const color = isStart && cell.player !== undefined
@@ -282,7 +308,7 @@ export default function BoardEditPage() {
                   ) : cell.type === "safe" ? (
                     <span className="text-rose-500 text-xs">🛡</span>
                   ) : cell.label ? (
-                    <span className="text-stone-600 px-0.5">{cell.label}</span>
+                    <span className="text-stone-600 px-0.5">{cell.label.length > 8 ? cell.label.slice(0, 8) + "…" : cell.label}</span>
                   ) : (
                     <span className="text-stone-300">+</span>
                   )}

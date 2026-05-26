@@ -19,7 +19,7 @@ export default function LoginPage() {
         ? await register(username.trim(), password)
         : await login(username.trim(), password);
       saveSession(user);
-      router.back(); // go back to where user came from
+      router.push("/");
     } catch (e: any) {
       setError(e.message || "操作失败");
     }

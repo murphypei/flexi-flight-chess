@@ -36,7 +36,7 @@ export default function NewBoardPage() {
     if (!name.trim()) { alert("请输入昵称"); return; }
     setCreating(true);
     try {
-      const playerId = "host_" + Date.now();
+      const playerId = getSession()?.id || ("guest_" + Date.now());
       const { code } = await createRoom(board.id, playerId, name.trim(), board.player_count);
       router.push(`/room/${code}?name=${encodeURIComponent(name.trim())}`);
     } catch (e: any) {
@@ -89,7 +89,7 @@ export default function NewBoardPage() {
                       </button>
                       <button onClick={() => router.push(`/board/edit?id=${b.id}`)}
                         className="px-3 rounded-xl border-2 border-stone-200 hover:border-stone-400 bg-white text-sm text-stone-600">✎</button>
-                      <button onClick={async () => { if (confirm(`删除「${b.name}」？`)) { await deleteBoard(b.id); setMyBoards((p) => p.filter((x) => x.id !== b.id)); } }}
+                      <button onClick={async () => { if (confirm(`删除「${b.name}」？`)) { try { await deleteBoard(b.id); setMyBoards((p) => p.filter((x) => x.id !== b.id)); } catch (e: any) { alert("删除失败: " + (e.message || "")); } } }}
                         className="px-3 rounded-xl border-2 border-stone-200 hover:border-red-400 bg-white text-sm text-stone-400 hover:text-red-500">✕</button>
                     </div>
                   ))}

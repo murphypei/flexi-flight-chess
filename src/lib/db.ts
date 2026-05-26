@@ -54,18 +54,18 @@ export interface PlayerRecord {
 const TEMPLATES: BoardRecord[] = [
   {
     id: "00000000-0000-0000-0000-000000000001",
-    name: "经典双人棋盘", description: "9×9 回字形，2人对战",
+    name: "经典双人棋盘", description: "9×9 回字形，48 格，2人对战",
     player_count: 2, board_size: 9,
     cells: buildCells({}, undefined, 2),
-    rules: { flySteps: FLY_STEPS, retreatSteps: RETREAT_STEPS, description: "标准规则：飞行+3，回退-2" },
+    rules: { flySteps: FLY_STEPS, retreatSteps: RETREAT_STEPS },
     is_template: true, is_public: true, owner_id: null,
   },
   {
     id: "00000000-0000-0000-0000-000000000002",
-    name: "经典四人棋盘", description: "9×9 回字形，4人对战",
+    name: "经典四人棋盘", description: "9×9 回字形，48 格，4人对战",
     player_count: 4, board_size: 9,
     cells: buildCells({}, undefined, 4),
-    rules: { flySteps: FLY_STEPS, retreatSteps: RETREAT_STEPS, description: "标准规则：飞行+3，回退-2" },
+    rules: { flySteps: FLY_STEPS, retreatSteps: RETREAT_STEPS },
     is_template: true, is_public: true, owner_id: null,
   },
 ];
