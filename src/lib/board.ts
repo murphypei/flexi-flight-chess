@@ -186,8 +186,13 @@ export function getPieceGrid(piece: Piece, players: Player[]): { row: number; co
 
 export function getCellContent(cell: Cell): string | null {
   if (cell.type === "normal" && cell.label) return cell.label;
-  if (cell.type === "fly") return `✈ 飞行 +${FLY_STEPS}`;
-  if (cell.type === "retreat") return `↩ 后退 ${RETREAT_STEPS}`;
+  if (cell.type === "fly") {
+    const dist = cell.effect?.target !== undefined
+      ? ((cell.effect.target - cell.index) % RING_LENGTH + RING_LENGTH) % RING_LENGTH
+      : FLY_STEPS;
+    return `✈ 飞行 +${dist}`;
+  }
+  if (cell.type === "retreat") return `↩ 后退 ${cell.effect?.steps ?? RETREAT_STEPS} 步`;
   if (cell.type === "safe") return "🛡 安全区";
   return null;
 }
@@ -262,7 +267,11 @@ export function applyMove(state: GameState, diceValue: number, cells: Cell[], pl
 
   if (landedCell.type === "fly" && landedCell.effect?.target !== undefined) {
     const s = (landedCell.effect.target - players[playerIdx].startIndex + RING_LENGTH) % RING_LENGTH;
-    if (s > 0 && s < RING_LENGTH) { newSteps = s; messages.push(`✈ 飞行 +${FLY_STEPS}`); }
+    if (s > 0 && s < RING_LENGTH) {
+      const flyDist = ((landedCell.effect.target - landedIdx) % RING_LENGTH + RING_LENGTH) % RING_LENGTH;
+      newSteps = s;
+      messages.push(`✈ 飞行 +${flyDist}`);
+    }
   } else if (landedCell.type === "retreat" && landedCell.effect?.steps !== undefined) {
     newSteps = Math.max(0, newSteps - landedCell.effect.steps);
     messages.push(`↩ 后退 ${landedCell.effect.steps} 步`);
@@ -284,14 +293,3 @@ export function applyMove(state: GameState, diceValue: number, cells: Cell[], pl
 }
 
 function isSafe(cell: Cell): boolean { return cell.type === "safe" || cell.type === "start"; }
-
-const LABELS_KEY = "ffc_cell_labels_v2";
-export function loadLabels(): Record<number, string> {
-  if (typeof window === "undefined") return {};
-  try { const raw = localStorage.getItem(LABELS_KEY); return raw ? (JSON.parse(raw) as Record<number, string>) : {}; }
-  catch { return {}; }
-}
-export function saveLabels(labels: Record<number, string>): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(LABELS_KEY, JSON.stringify(labels));
-}

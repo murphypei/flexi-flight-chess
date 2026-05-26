@@ -7,7 +7,7 @@ import {
 } from "@/lib/board";
 import { createBoard, getBoard, updateBoard } from "@/lib/db";
 import { FLY_STEPS, RETREAT_STEPS } from "@/lib/board";
-import { getSession } from "@/lib/auth";
+import { getSession, User } from "@/lib/auth";
 
 const TYPES: { value: CellType; label: string; icon: string }[] = [
   { value: "normal", label: "普通", icon: "📝" },
@@ -18,7 +18,8 @@ const TYPES: { value: CellType; label: string; icon: string }[] = [
 
 export default function BoardEditPage() {
   const router = useRouter();
-  const user = getSession();
+  const [user, setUser] = useState<User | null>(null);
+  const [userChecked, setUserChecked] = useState(false);
   const [initDone, setInitDone] = useState(false);
   const [playerCount, setPlayerCount] = useState<2 | 4>(2);
   const [step, setStep] = useState<"players" | "edit">("players");
@@ -35,13 +36,15 @@ export default function BoardEditPage() {
   const [showRules, setShowRules] = useState(false);
   const [loadError, setLoadError] = useState("");
 
-  // Read URL params on client mount — useState initializers can't use window (SSR)
+  // Read URL params & session on client mount — useState initializers can't use window (SSR)
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id");
     if (id) {
       setEditId(id);
       setStep("edit");
     }
+    setUser(getSession());
+    setUserChecked(true);
     setInitDone(true);
   }, []);
 
@@ -120,7 +123,7 @@ export default function BoardEditPage() {
         await updateBoard(editId, {
           name: boardName.trim(), player_count: playerCount, is_public: isPublic,
           cells, rules: { flySteps, retreatSteps },
-        } as any);
+        });
         alert("已更新！");
       } else {
         await createBoard({
@@ -159,6 +162,15 @@ export default function BoardEditPage() {
       alert("保存失败: " + (e.message || ""));
     }
     setSaving(false);
+  }
+
+  // Not checked yet — prevent hydration flash
+  if (!userChecked) {
+    return (
+      <main className="min-h-screen flex items-center justify-center" style={{ background: "linear-gradient(135deg, #FEF3E2 0%, #FDF8EE 50%, #F0F4FF 100%)" }}>
+        <div className="w-6 h-6 border-2 border-stone-700 border-t-transparent rounded-full animate-spin" />
+      </main>
+    );
   }
 
   // Not logged in

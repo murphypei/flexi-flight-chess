@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { seedTemplates, getTemplates, getMyBoards, getPublicBoards, createRoom, deleteBoard, BoardRecord } from "@/lib/db";
+import { seedTemplates, getTemplates, getMyBoards, getPublicBoards, createRoom, BoardRecord } from "@/lib/db";
 import { getSession, clearSession, User } from "@/lib/auth";
 
 export default function NewBoardPage() {
@@ -13,7 +13,17 @@ export default function NewBoardPage() {
   const [publicBoards, setPublicBoards] = useState<BoardRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
+  const [selectedBoard, setSelectedBoard] = useState<BoardRecord | null>(null);
   const [creating, setCreating] = useState(false);
+  const [localCount, setLocalCount] = useState(2);
+  const [showLocalConfig, setShowLocalConfig] = useState(false);
+  const [mode, setMode] = useState<"online" | "local" | null>(null);
+
+  useEffect(() => {
+    const m = new URLSearchParams(window.location.search).get("mode");
+    if (m === "online" || m === "local") setMode(m);
+    if (m === "local") setShowLocalConfig(true);
+  }, []);
 
   useEffect(() => {
     setUser(getSession());
@@ -32,12 +42,24 @@ export default function NewBoardPage() {
     load();
   }, [user]);
 
-  async function handleCreate(board: BoardRecord) {
+  function handleSelect(board: BoardRecord) {
+    if (selectedBoard?.id === board.id) {
+      setSelectedBoard(null);
+      setShowLocalConfig(false);
+    } else {
+      setSelectedBoard(board);
+      setLocalCount(board.player_count);
+      setShowLocalConfig(false);
+    }
+  }
+
+  async function handleOnline() {
+    if (!selectedBoard) return;
     if (!name.trim()) { alert("请输入昵称"); return; }
     setCreating(true);
     try {
       const playerId = getSession()?.id || ("guest_" + Date.now());
-      const { code } = await createRoom(board.id, playerId, name.trim(), board.player_count);
+      const { code } = await createRoom(selectedBoard.id, playerId, name.trim(), selectedBoard.player_count);
       router.push(`/room/${code}?name=${encodeURIComponent(name.trim())}`);
     } catch (e: any) {
       alert(e.message || "创建失败");
@@ -45,11 +67,34 @@ export default function NewBoardPage() {
     }
   }
 
+  function handleLocal() {
+    if (!selectedBoard) return;
+    router.push(`/local?board=${selectedBoard.id}&players=${localCount}`);
+  }
+
   const twoPlayer = templates.filter((t) => t.player_count === 2);
   const fourPlayer = templates.filter((t) => t.player_count === 4);
 
+  const boardButton = (b: BoardRecord) => {
+    const isSelected = selectedBoard?.id === b.id;
+    return (
+      <button
+        key={b.id}
+        onClick={() => handleSelect(b)}
+        className={`w-full p-4 rounded-xl border-2 text-center transition-all ${
+          isSelected
+            ? "border-stone-700 bg-stone-100 ring-2 ring-stone-300"
+            : "border-stone-200 hover:border-stone-400 bg-white"
+        }`}
+      >
+        <div className="font-semibold">{b.name}</div>
+        <div className="text-xs text-stone-500 mt-1">{b.player_count}人{b.is_public ? " · 公开" : " · 私密"}</div>
+      </button>
+    );
+  };
+
   return (
-    <main className="min-h-screen p-4" style={{ background: "linear-gradient(135deg, #FEF3E2 0%, #FDF8EE 50%, #F0F4FF 100%)" }}>
+    <main className="min-h-screen p-4 pb-32" style={{ background: "linear-gradient(135deg, #FEF3E2 0%, #FDF8EE 50%, #F0F4FF 100%)" }}>
       <div className="max-w-md mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
@@ -64,12 +109,17 @@ export default function NewBoardPage() {
           )}
         </div>
 
-        <h1 className="text-2xl font-bold mb-6">创建新房间</h1>
+        <h1 className="text-2xl font-bold mb-6">
+          {mode === "online" ? "创建联网房间" : mode === "local" ? "创建单机游戏" : "选择棋盘"}
+        </h1>
 
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-stone-700 mb-1">昵称</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="你的昵称" className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:border-stone-700 focus:outline-none text-sm" maxLength={12} />
-        </div>
+        {/* Nickname (only for online mode) */}
+        {mode !== "local" && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-stone-700 mb-1">昵称（联网需要）</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="你的昵称" className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:border-stone-700 focus:outline-none text-sm" maxLength={12} />
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-8"><div className="w-6 h-6 border-2 border-stone-700 border-t-transparent rounded-full animate-spin mx-auto" /></div>
@@ -80,19 +130,7 @@ export default function NewBoardPage() {
               <div>
                 <h2 className="text-sm font-bold text-stone-500 uppercase mb-2">我的棋盘</h2>
                 <div className="space-y-2">
-                  {myBoards.map((b) => (
-                    <div key={b.id} className="flex items-stretch gap-2">
-                      <button onClick={() => handleCreate(b)} disabled={creating}
-                        className="flex-1 p-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-left bg-white transition-colors">
-                        <div className="font-semibold">{b.name}</div>
-                        <div className="text-xs text-stone-500 mt-1">{b.player_count}人 {b.is_public ? "· 公开" : "· 私密"}</div>
-                      </button>
-                      <button onClick={() => router.push(`/board/edit?id=${b.id}`)}
-                        className="px-3 rounded-xl border-2 border-stone-200 hover:border-stone-400 bg-white text-sm text-stone-600">✎</button>
-                      <button onClick={async () => { if (confirm(`删除「${b.name}」？`)) { try { await deleteBoard(b.id); setMyBoards((p) => p.filter((x) => x.id !== b.id)); } catch (e: any) { alert("删除失败: " + (e.message || "")); } } }}
-                        className="px-3 rounded-xl border-2 border-stone-200 hover:border-red-400 bg-white text-sm text-stone-400 hover:text-red-500">✕</button>
-                    </div>
-                  ))}
+                  {myBoards.map((b) => boardButton(b))}
                 </div>
               </div>
             )}
@@ -102,13 +140,7 @@ export default function NewBoardPage() {
               <div>
                 <h2 className="text-sm font-bold text-stone-500 uppercase mb-2">公开棋盘</h2>
                 <div className="space-y-2">
-                  {publicBoards.map((b) => (
-                    <button key={b.id} onClick={() => handleCreate(b)} disabled={creating}
-                      className="w-full p-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-left bg-white transition-colors">
-                      <div className="font-semibold">{b.name}</div>
-                      <div className="text-xs text-stone-500 mt-1">{b.player_count}人 · 自定义</div>
-                    </button>
-                  ))}
+                  {publicBoards.map((b) => boardButton(b))}
                 </div>
               </div>
             )}
@@ -118,13 +150,7 @@ export default function NewBoardPage() {
               <div>
                 <h2 className="text-sm font-bold text-stone-500 uppercase mb-2">双人棋盘</h2>
                 <div className="space-y-2">
-                  {twoPlayer.map((t) => (
-                    <button key={t.id} onClick={() => handleCreate(t)} disabled={creating}
-                      className="w-full p-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-left bg-white transition-colors">
-                      <div className="font-semibold">{t.name}</div>
-                      <div className="text-xs text-stone-500 mt-1">{t.description}</div>
-                    </button>
-                  ))}
+                  {twoPlayer.map((t) => boardButton(t))}
                 </div>
               </div>
             )}
@@ -132,28 +158,80 @@ export default function NewBoardPage() {
               <div>
                 <h2 className="text-sm font-bold text-stone-500 uppercase mb-2">四人棋盘</h2>
                 <div className="space-y-2">
-                  {fourPlayer.map((t) => (
-                    <button key={t.id} onClick={() => handleCreate(t)} disabled={creating}
-                      className="w-full p-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-left bg-white transition-colors">
-                      <div className="font-semibold">{t.name}</div>
-                      <div className="text-xs text-stone-500 mt-1">{t.description}</div>
-                    </button>
-                  ))}
+                  {fourPlayer.map((t) => boardButton(t))}
                 </div>
               </div>
             )}
-
-            {/* Custom board — need login */}
-            <button onClick={() => {
-              if (!getSession()) { router.push("/login"); return; }
-              router.push("/board/edit");
-            }} className="w-full p-4 rounded-xl border-2 border-dashed border-stone-300 hover:border-stone-500 text-left text-stone-600 bg-white">
-              <div className="font-semibold">{user ? "+ 自定义棋盘" : "登录后可自定义棋盘"}</div>
-              <div className="text-xs text-stone-400 mt-1">从头创建，自定义格子内容和规则</div>
-            </button>
           </div>
         )}
       </div>
+
+      {/* Bottom action bar — visible when a board is selected */}
+      {selectedBoard && (
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur border-t border-stone-200 shadow-lg z-40">
+          <div className="max-w-md mx-auto space-y-3">
+            <div className="text-center text-sm text-stone-600">
+              已选择：<span className="font-semibold text-stone-900">{selectedBoard.name}</span> · {selectedBoard.player_count}人
+            </div>
+
+            {mode === "online" ? (
+              <button onClick={handleOnline} disabled={creating}
+                className="w-full py-3 bg-stone-900 text-white rounded-xl font-semibold disabled:opacity-50 text-sm">
+                {creating ? "创建中..." : "开始联网对战"}
+              </button>
+            ) : mode === "local" ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 justify-center">
+                  <label className="text-sm text-stone-600">游戏人数</label>
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4].map((n) => (
+                      <button key={n} onClick={() => setLocalCount(n)}
+                        className={`w-10 h-10 rounded-lg text-sm font-semibold border-2 transition-all ${
+                          localCount === n ? "border-stone-700 bg-stone-100" : "border-stone-200 hover:border-stone-400 bg-white"
+                        }`}
+                      >{n}</button>
+                    ))}
+                  </div>
+                </div>
+                <button onClick={handleLocal}
+                  className="w-full py-3 bg-stone-900 text-white rounded-xl font-semibold text-sm">开始单机游戏</button>
+              </div>
+            ) : !showLocalConfig ? (
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={handleOnline} disabled={creating}
+                  className="py-3 bg-stone-900 text-white rounded-xl font-semibold disabled:opacity-50 text-sm">
+                  {creating ? "创建中..." : "联网对战"}
+                </button>
+                <button onClick={() => setShowLocalConfig(true)}
+                  className="py-3 border-2 border-stone-700 text-stone-700 rounded-xl font-semibold text-sm">
+                  单机游戏
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 justify-center">
+                  <label className="text-sm text-stone-600">游戏人数</label>
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4].map((n) => (
+                      <button key={n} onClick={() => setLocalCount(n)}
+                        className={`w-10 h-10 rounded-lg text-sm font-semibold border-2 transition-all ${
+                          localCount === n ? "border-stone-700 bg-stone-100" : "border-stone-200 hover:border-stone-400 bg-white"
+                        }`}
+                      >{n}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setShowLocalConfig(false)}
+                    className="flex-1 py-3 border-2 border-stone-200 text-stone-600 rounded-xl font-semibold text-sm">← 返回</button>
+                  <button onClick={handleLocal}
+                    className="flex-1 py-3 bg-stone-900 text-white rounded-xl font-semibold text-sm">开始游戏</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -85,31 +85,49 @@ export default function Home() {
             <button onClick={handleLogout} className="text-sm text-stone-500 hover:text-stone-700 px-3 py-1.5 rounded-lg border border-stone-300 bg-white">退出登录</button>
           </div>
 
-          {/* Join room */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200 mb-4">
-            {error && <div className="bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm mb-3">{error}</div>}
-            <div className="flex gap-2">
-              <input
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
-                placeholder="输入房间号加入"
-                className="flex-1 px-4 py-3 rounded-xl border border-stone-300 focus:border-stone-700 focus:outline-none text-sm uppercase"
-                maxLength={6}
-                onKeyDown={(e) => e.key === "Enter" && handleJoin()}
-              />
-              <button onClick={handleJoin} className="px-6 py-3 bg-stone-900 text-white rounded-xl font-semibold hover:bg-stone-800 text-sm">加入</button>
+          {/* 加入房间 */}
+          <div className="mb-6">
+            <h2 className="text-sm font-bold text-stone-500 uppercase mb-2">加入房间</h2>
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+              {error && <div className="bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm mb-3">{error}</div>}
+              <div className="flex gap-2">
+                <input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                  placeholder="输入房间号加入"
+                  className="flex-1 px-4 py-3 rounded-xl border border-stone-300 focus:border-stone-700 focus:outline-none text-sm uppercase"
+                  maxLength={6}
+                  onKeyDown={(e) => e.key === "Enter" && handleJoin()}
+                />
+                <button onClick={handleJoin} className="px-6 py-3 bg-stone-900 text-white rounded-xl font-semibold hover:bg-stone-800 text-sm">加入</button>
+              </div>
             </div>
           </div>
 
-          {/* My boards */}
-          <div className="mb-4">
+          {/* 创建房间 */}
+          <div className="mb-6">
+            <h2 className="text-sm font-bold text-stone-500 uppercase mb-2">创建房间</h2>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => router.push("/board/new?mode=online")}
+                className="p-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-center bg-white transition-colors">
+                <div className="font-semibold text-sm">联网对战</div>
+                <div className="text-xs text-stone-500 mt-0.5">创建房间邀请好友</div>
+              </button>
+              <button onClick={() => router.push("/board/new?mode=local")}
+                className="p-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-center bg-white transition-colors">
+                <div className="font-semibold text-sm">单机游戏</div>
+                <div className="text-xs text-stone-500 mt-0.5">一台手机轮流玩</div>
+              </button>
+            </div>
+          </div>
+
+          {/* 我的棋盘 */}
+          <div className="mb-6">
             <h2 className="text-sm font-bold text-stone-500 uppercase mb-2">我的棋盘</h2>
             {loading ? (
               <div className="text-center py-4"><div className="w-5 h-5 border-2 border-stone-700 border-t-transparent rounded-full animate-spin mx-auto" /></div>
-            ) : myBoards.length === 0 ? (
-              <p className="text-sm text-stone-400 py-3">还没有自定义棋盘</p>
-            ) : (
-              <div className="space-y-2">
+            ) : myBoards.length > 0 ? (
+              <div className="space-y-2 mb-2">
                 {myBoards.map((b) => (
                   <div key={b.id} className="flex items-stretch gap-2">
                     <button onClick={() => handleCreateRoom(b)}
@@ -124,16 +142,9 @@ export default function Home() {
                   </div>
                 ))}
               </div>
+            ) : (
+              <p className="text-sm text-stone-400 py-3">还没有自定义棋盘</p>
             )}
-          </div>
-
-          {/* Actions */}
-          <div className="space-y-2">
-            <button onClick={() => router.push("/board/new")}
-              className="w-full p-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-left bg-white transition-colors">
-              <div className="font-semibold">创建新房间</div>
-              <div className="text-xs text-stone-500 mt-1">从模板或公开棋盘中选择</div>
-            </button>
             <button onClick={() => router.push("/board/edit")}
               className="w-full p-4 rounded-xl border-2 border-dashed border-stone-300 hover:border-stone-500 text-left bg-white transition-colors">
               <div className="font-semibold">+ 自定义棋盘</div>

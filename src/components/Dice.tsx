@@ -56,6 +56,8 @@ export default function Dice({ value, isRolling, disabled, onRoll, color }: Dice
     }
   }, [isRolling, value]);
 
+  const showNeutral = value === null && !isRolling;
+
   return (
     <button
       onClick={onRoll}
@@ -70,12 +72,18 @@ export default function Dice({ value, isRolling, disabled, onRoll, color }: Dice
         }
       `}
     >
-      <div
-        className={`absolute inset-0 ${isRolling ? "animate-spin" : ""}`}
-        style={{ animationDuration: isRolling ? "0.6s" : undefined }}
-      >
-        <DiceFace value={displayValue} color={color} />
-      </div>
+      {showNeutral ? (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-3xl font-bold" style={{ color }}>?</span>
+        </div>
+      ) : (
+        <div
+          className={`absolute inset-0 ${isRolling ? "animate-spin" : ""}`}
+          style={{ animationDuration: isRolling ? "0.6s" : undefined }}
+        >
+          <DiceFace value={displayValue} color={color} />
+        </div>
+      )}
     </button>
   );
 }

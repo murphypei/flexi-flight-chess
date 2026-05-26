@@ -70,10 +70,14 @@ const TEMPLATES: BoardRecord[] = [
   },
 ];
 
+let seeded = false;
+
 export async function seedTemplates() {
+  if (seeded) return;
   for (const t of TEMPLATES) {
     await supabase.from("boards").upsert(t, { onConflict: "id" });
   }
+  seeded = true;
 }
 
 // ============================================================
@@ -158,17 +162,18 @@ export async function getRoomByCode(code: string) {
 }
 
 export async function joinRoom(roomId: string, name: string) {
-  // Count existing players
-  const { data: existing } = await supabase.from("players").select("*").eq("room_id", roomId).order("player_index");
+  const { data: existing } = await supabase.from("players").select("player_index, color").eq("room_id", roomId).order("player_index");
   const count = existing?.length || 0;
+  const maxIdx = count > 0 ? Math.max(...existing!.map((p) => p.player_index)) : -1;
+  const nextIdx = maxIdx + 1;
 
   const colors = ["red", "blue", "green", "yellow"];
   const used = (existing || []).map((p: any) => p.color);
-  const color = colors.find((c) => !used.includes(c)) || colors[count % 4];
+  const color = colors.find((c) => !used.includes(c)) || colors[nextIdx % 4];
 
   const { data, error } = await supabase.from("players").insert({
     room_id: roomId, name, color,
-    player_index: count, is_host: false, is_ready: false,
+    player_index: nextIdx, is_host: false, is_ready: false,
   }).select().single();
   if (error) throw error;
   return data as PlayerRecord;
@@ -181,6 +186,10 @@ export async function getRoomPlayers(roomId: string): Promise<PlayerRecord[]> {
 
 export async function updatePlayer(roomId: string, playerIndex: number, updates: Partial<PlayerRecord>) {
   await supabase.from("players").update(updates).eq("room_id", roomId).eq("player_index", playerIndex);
+}
+
+export async function deletePlayer(roomId: string, playerIndex: number) {
+  await supabase.from("players").delete().eq("room_id", roomId).eq("player_index", playerIndex);
 }
 
 export async function updateRoom(roomId: string, updates: Partial<RoomRecord>) {

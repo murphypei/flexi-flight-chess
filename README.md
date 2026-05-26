@@ -116,12 +116,12 @@ npm run dev
 
 ## 功能特性
 
-- **多款内置棋盘**：2人/4人各3款经典棋盘（经典版、快速版、挑战版）
-- **自定义棋盘**：基于模板创建，可编辑普通格内容（惩罚/奖励/任务等）
+- **多款内置棋盘**：2人/4人经典棋盘
+- **自定义棋盘**：登录后从头创建，可编辑格子类型（飞行/后退/安全/普通）和内容
 - **房间系统**：6位房间码加入，支持实时多人对战
-- **传统飞行棋规则**：掷6起飞、撞子回基地、安全区保护、叠子规则
+- **飞行棋规则**：飞行格加速、后退格惩罚、安全区保护、碰撞回起点、终点反弹
 - **实时同步**：基于 Supabase Realtime，所有玩家状态秒级同步
-- **简约扁平设计**：方形棋盘，清晰易用的 UI
+- **灵活人数**：支持 1-4 人游戏，按实际加入人数开局
 
 ## 技术栈
 
@@ -138,17 +138,30 @@ npm run dev
 ```
 src/
   app/              # Next.js 页面
-    page.tsx        # 首页（创建/加入房间）
+    page.tsx        # 首页（登录/游客加入房间）
+    login/          # 登录/注册
+    board/
+      new/          # 棋盘列表（创建房间）
+      edit/         # 棋盘编辑器
     room/[code]/    # 游戏房间
-    board/new/      # 新建棋盘
-    board/edit/[id]/ # 编辑棋盘
   components/       # React 组件
-    game/           # 游戏组件
+    Board.tsx       # 棋盘渲染
+    Dice.tsx        # 骰子组件
   lib/              # 工具库
-    boards/         # 棋盘模板和渲染
-    game/           # 游戏引擎和存储
+    auth.ts         # 认证
+    board.ts        # 棋盘引擎
+    db.ts           # 数据库 CRUD
     supabase.ts     # Supabase 客户端
-  types/            # TypeScript 类型
 supabase/
   migrations/       # 数据库迁移
 ```
+
+## 已知安全问题（TODO）
+
+以下安全项已在计划中但尚未实施，切勿在生产环境公开部署：
+
+1. **密码哈希**：当前使用客户端 SHA-256 无盐哈希，应改为 bcrypt/scrypt/argon2 服务端哈希。
+2. **数据库 RLS**：所有表的 Row Level Security 策略为 `TO anon USING (true)`，意味着任何匿名用户可读写任意数据。需按用户身份限制权限。
+3. **登录频率限制**：登录/注册接口无频率限制，可被暴力破解。需添加 rate limiting 或 CAPTCHA。
+4. **游戏状态校验**：游戏状态（掷骰子、移动）直接由客户端写入数据库，无服务端校验。恶意客户端可任意修改棋局。
+5. **环境变量**：`.env.local` 中的 `NEXT_PUBLIC_ADMIN_PASSWORD` 和 `SUPABASE_DATABASE_PASSWORD` 不应提交。确保 `.env.local` 在 `.gitignore` 中，并检查 git 历史是否暴露了敏感信息。

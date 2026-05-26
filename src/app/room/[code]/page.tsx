@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Board from "@/components/Board";
 import Dice from "@/components/Dice";
 import {
   applyMove, Cell, GameState,
-  getPieceCellIndex, initGameState, makePlayers, Player, rollDice, PIECE_COUNT,
+  initGameState, makePlayers, Player, rollDice, PIECE_COUNT,
 } from "@/lib/board";
 import {
   getRoomByCode, getBoard, getRoomPlayers, joinRoom,
-  updateRoom, subscribeRoom, subscribePlayers, PlayerRecord, seedTemplates, updatePlayer,
+  updateRoom, subscribeRoom, subscribePlayers, PlayerRecord, seedTemplates, updatePlayer, deletePlayer,
 } from "@/lib/db";
 
 const PLAYER_HEX = ["#EF4444", "#3B82F6", "#22C55E", "#EAB308"];
@@ -23,7 +23,6 @@ export default function RoomPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [boardId, setBoardId] = useState("");
   const [boardName, setBoardName] = useState("");
   const [playerCount, setPlayerCount] = useState(2);  // board design player count
   const [activeCount, setActiveCount] = useState(2);   // actual players in game
@@ -37,9 +36,16 @@ export default function RoomPage() {
   const [retreatSteps, setRetreatSteps] = useState(2);
   const [showRules, setShowRules] = useState(false);
   const [popup, setPopup] = useState<{ text: string; color: string } | null>(null);
+  const [roomId, setRoomId] = useState("");
   const rollingRef = useRef(false);
   const roomIdRef = useRef("");
   const gameStartedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const popupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     const name = new URLSearchParams(window.location.search).get("name") || "";
@@ -53,11 +59,11 @@ export default function RoomPage() {
       const room = await getRoomByCode(code);
       if (!room) { setError("房间不存在"); setLoading(false); return; }
       roomIdRef.current = room.id;
+      setRoomId(room.id);
 
       const board = await getBoard(room.board_id);
       if (!board) { setError("棋盘不存在"); setLoading(false); return; }
 
-      setBoardId(board.id);
       setBoardName(board.name);
       setPlayerCount(board.player_count);
       setCells(board.cells);
@@ -89,11 +95,19 @@ export default function RoomPage() {
         setState(initGameState(actualCount));
       }
 
+      if (!mountedRef.current) return;
       setLoading(false);
     } catch (e: any) {
+      if (!mountedRef.current) return;
       setError(e.message || "加载失败");
       setLoading(false);
     }
+  }
+
+  function showPopup(msg: string, color: string) {
+    if (popupTimerRef.current) clearTimeout(popupTimerRef.current);
+    setPopup({ text: msg, color });
+    popupTimerRef.current = setTimeout(() => setPopup(null), 2500);
   }
 
   // Realtime subscriptions
@@ -103,9 +117,8 @@ export default function RoomPage() {
       const gs = payload.new?.game_state as GameState | undefined;
       if (gs) {
         setState(gs);
-        // Show popup for non-acting players too
-        if (gs.popupMessage && !gs.isRolling && gs.diceValue !== null && gs.winner === null) {
-          setPopup({ text: gs.popupMessage, color: PLAYER_HEX[gs.lastDicePlayer] });
+        if (gs.popupMessage && !gs.isRolling && gs.diceValue !== null) {
+          showPopup(gs.popupMessage, PLAYER_HEX[gs.lastDicePlayer]);
         }
       }
     });
@@ -118,7 +131,7 @@ export default function RoomPage() {
       }
     });
     return () => { unsub1?.unsubscribe(); unsub2?.unsubscribe(); };
-  }, [roomIdRef.current]);
+  }, [roomId]);
 
   function handleRoll() {
     if (!state || state.winner || state.isRolling || rollingRef.current) return;
@@ -132,17 +145,19 @@ export default function RoomPage() {
       const newState = applyMove({ ...currentState, isRolling: false }, value, cells, gamePlayers);
       setState(newState);
       if (newState.popupMessage) {
-        setPopup({ text: newState.popupMessage, color: PLAYER_HEX[newState.lastDicePlayer] });
+        showPopup(newState.popupMessage, PLAYER_HEX[newState.lastDicePlayer]);
       }
       // Sync to Supabase
-      updateRoom(roomIdRef.current, { game_state: newState, status: newState.winner !== null ? "finished" : "playing" });
+      updateRoom(roomIdRef.current, { game_state: newState, status: newState.winner !== null ? "finished" : "playing" })
+        .catch(() => {}); // fail silently: next roll re-syncs state
       rollingRef.current = false;
     }, 700);
   }
 
   function handleReady() {
     if (myPlayerIdx < 0) return;
-    updatePlayer(roomIdRef.current, myPlayerIdx, { is_ready: true } as any);
+    const current = roomPlayers[myPlayerIdx]?.is_ready ?? false;
+    updatePlayer(roomIdRef.current, myPlayerIdx, { is_ready: !current }).catch(() => {});
   }
 
   function handleStartGame() {
@@ -151,8 +166,27 @@ export default function RoomPage() {
     const gamePlayers = makePlayers(activeCount);
     const newState: GameState = { ...initGameState(activeCount), ...state, message: "游戏开始！" + gamePlayers[0].name + " 请掷骰子" };
     setState(newState);
-    updateRoom(roomIdRef.current, { game_state: newState, status: "playing" });
+    updateRoom(roomIdRef.current, { game_state: newState, status: "playing" }).catch(() => {});
   }
+
+  async function handleLeave() {
+    if (myPlayerIdx >= 0 && roomIdRef.current) {
+      await deletePlayer(roomIdRef.current, myPlayerIdx).catch(() => {});
+    }
+    router.push("/");
+  }
+
+  // Clean up player record on tab close (best-effort)
+  useEffect(() => {
+    const handler = () => {
+      if (roomIdRef.current && myPlayerIdx >= 0) {
+        const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/players?room_id=eq.${roomIdRef.current}&player_index=eq.${myPlayerIdx}`;
+        fetch(url, { method: "DELETE", keepalive: true, headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "", Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""}` } }).catch(() => {});
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [myPlayerIdx]);
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-stone-100"><div className="w-8 h-8 border-2 border-stone-700 border-t-transparent rounded-full animate-spin" /></div>;
@@ -181,7 +215,7 @@ export default function RoomPage() {
               {code} 📋
             </button>
           </div>
-          <button onClick={() => router.push("/")} className="text-sm font-semibold px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 active:scale-95 transition-all shadow-sm">退出房间</button>
+          <button onClick={handleLeave} className="text-sm font-semibold px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 active:scale-95 transition-all shadow-sm">退出房间</button>
         </header>
 
         {/* Rules toggle & panel */}
@@ -249,10 +283,9 @@ export default function RoomPage() {
         <div className="mb-4 relative">
           <Board cells={cells} state={state} players={gamePlayers} />
           {popup && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 rounded-2xl" onClick={() => setPopup(null)}>
-              <div className="bg-white rounded-2xl px-6 py-5 mx-8 text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
-                <p className="text-xl font-bold leading-relaxed" style={{ color: popup.color }}>{popup.text}</p>
-                <p className="text-base text-stone-500 mt-4">点击任意处关闭</p>
+            <div className="absolute bottom-2 left-2 right-2 z-50 flex justify-center pointer-events-none">
+              <div className="bg-white rounded-2xl px-5 py-3 shadow-lg border border-stone-200 pointer-events-auto text-center animate-bounce cursor-pointer" onClick={() => { if (popupTimerRef.current) clearTimeout(popupTimerRef.current); setPopup(null); }}>
+                <p className="text-base font-bold" style={{ color: popup.color }}>{popup.text}</p>
               </div>
             </div>
           )}
@@ -301,6 +334,9 @@ export default function RoomPage() {
             {roomPlayers.length < playerCount && <p className="text-sm text-stone-500 text-center">等待更多玩家加入 ({roomPlayers.length}/{playerCount})</p>}
             {myPlayerIdx >= 0 && !roomPlayers[myPlayerIdx]?.is_ready && (
               <button onClick={handleReady} className="w-full py-3 bg-stone-900 text-white rounded-xl font-semibold">准备</button>
+            )}
+            {myPlayerIdx >= 0 && roomPlayers[myPlayerIdx]?.is_ready && (
+              <button onClick={handleReady} className="w-full py-3 border-2 border-stone-300 text-stone-600 rounded-xl font-semibold bg-stone-50">取消准备</button>
             )}
             {myPlayerIdx === 0 && roomPlayers.length >= 1 && roomPlayers.every((p: PlayerRecord) => p.is_ready || p.is_host) && (
               <button onClick={handleStartGame} className="w-full py-3 bg-stone-900 text-white rounded-xl font-semibold">开始游戏</button>
