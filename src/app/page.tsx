@@ -3,25 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSession, clearSession, User } from "@/lib/auth";
-import { getMyBoards, seedTemplates, createRoom, BoardRecord } from "@/lib/db";
-import { Cell, CellType } from "@/lib/board";
-
-const TYPE_LABEL: Record<CellType, string> = {
-  normal: "普通", start: "起点", safe: "安全", fly: "飞行", retreat: "后退", end: "终点",
-};
-
-const TYPE_ICON: Record<CellType, string> = {
-  normal: "", start: "★", safe: "🛡", fly: "✈", retreat: "↩", end: "★",
-};
-
-function cellSummary(c: Cell, flySteps: number, retreatSteps: number) {
-  if (c.type === "start") return "起点";
-  if (c.type === "end") return "终点 ★";
-  if (c.type === "fly") return `飞行 +${flySteps}`;
-  if (c.type === "retreat") return `后退 ${retreatSteps} 步`;
-  if (c.type === "safe") return "安全区";
-  return c.label || "空白";
-}
+import { getMyBoards, seedTemplates, updateBoard, BoardRecord } from "@/lib/db";
+import { makePlayers, initGameState } from "@/lib/board";
+import Board from "@/components/Board";
 
 export default function Home() {
   const router = useRouter();
@@ -32,6 +16,8 @@ export default function Home() {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [contentBoard, setContentBoard] = useState<BoardRecord | null>(null);
+  const [editCellIdx, setEditCellIdx] = useState<number | null>(null);
+  const [editCellText, setEditCellText] = useState("");
 
   useEffect(() => {
     const u = getSession();
@@ -59,13 +45,18 @@ export default function Home() {
     router.push(`/room/${code.toUpperCase()}?name=${encodeURIComponent(nick.trim())}`);
   }
 
-  async function handleCreateRoom(board: BoardRecord) {
-    if (!user) return;
+  async function handleSaveCell() {
+    if (editCellIdx === null || !contentBoard) return;
+    const newCells = contentBoard.cells.map((c) =>
+      c.index === editCellIdx ? { ...c, label: editCellText } : c
+    );
     try {
-      const { code } = await createRoom(board.id, user.id, user.username, board.player_count);
-      router.push(`/room/${code}?name=${encodeURIComponent(user.username)}`);
+      await updateBoard(contentBoard.id, { cells: newCells });
+      setContentBoard({ ...contentBoard, cells: newCells });
+      setMyBoards((prev) => prev.map((b) => b.id === contentBoard.id ? { ...b, cells: newCells } : b));
+      setEditCellIdx(null);
     } catch (e: any) {
-      alert(e.message || "创建失败");
+      alert("保存失败: " + (e.message || ""));
     }
   }
 
@@ -130,11 +121,11 @@ export default function Home() {
               <div className="space-y-2 mb-2">
                 {myBoards.map((b) => (
                   <div key={b.id} className="flex items-stretch gap-2">
-                    <button onClick={() => handleCreateRoom(b)}
-                      className="flex-1 p-4 rounded-xl border-2 border-stone-200 hover:border-stone-400 text-left bg-white transition-colors">
+                    <div
+                      className="flex-1 p-4 rounded-xl border-2 border-stone-200 text-left bg-white">
                       <div className="font-semibold">{b.name}</div>
                       <div className="text-xs text-stone-500 mt-1">{b.player_count}人{b.is_public ? " · 公开" : " · 私密"}</div>
-                    </button>
+                    </div>
                     <button onClick={(e) => { e.stopPropagation(); setContentBoard(b); }}
                       className="px-3 rounded-xl border-2 border-stone-200 hover:border-stone-400 bg-white text-sm text-stone-600">📋</button>
                     <button onClick={() => router.push(`/board/edit?id=${b.id}`)}
@@ -153,47 +144,77 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Board content modal */}
-        {contentBoard && (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={() => setContentBoard(null)}>
+        {/* Board preview modal */}
+        {contentBoard && (() => {
+          const mockState = initGameState(0);
+          mockState.pieces = [];
+          mockState.homeCount = [];
+          mockState.endCount = [];
+          mockState.currentPlayer = 0;
+          mockState.lastDicePlayer = 0;
+          mockState.diceValue = null;
+          mockState.winner = null;
+          const mockPlayers = makePlayers(Math.max(contentBoard.player_count, 1));
+          const flySteps = contentBoard.rules?.flySteps ?? 3;
+          const retreatSteps = contentBoard.rules?.retreatSteps ?? 2;
+
+          return (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={() => { setContentBoard(null); setEditCellIdx(null); }}>
             <div className="absolute inset-0 bg-black/40" />
-            <div className="relative bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[70vh] flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between p-4 border-b border-stone-200">
+            <div className="relative bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[85vh] flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-4 border-b border-stone-200 shrink-0">
                 <div>
                   <h2 className="font-bold text-lg">{contentBoard.name}</h2>
-                  <p className="text-xs text-stone-500">{contentBoard.player_count}人 · {contentBoard.cells.length} 格</p>
+                  <p className="text-xs text-stone-500">{contentBoard.player_count}人 · {contentBoard.cells.length} 格 · 飞行+{flySteps} · 后退{retreatSteps}</p>
                 </div>
-                <button onClick={() => setContentBoard(null)} className="text-stone-400 hover:text-stone-700 text-lg px-1">✕</button>
+                <button onClick={() => { setContentBoard(null); setEditCellIdx(null); }} className="text-stone-400 hover:text-stone-700 text-lg px-1">✕</button>
               </div>
-              <div className="overflow-y-auto p-4 space-y-1">
-                {(() => {
-                  const groups: Record<CellType, Cell[]> = { normal: [], start: [], safe: [], fly: [], retreat: [], end: [] };
-                  for (const c of contentBoard.cells) {
-                    groups[c.type].push(c);
-                  }
-                  const flySteps = contentBoard.rules?.flySteps ?? 3;
-                  const retreatSteps = contentBoard.rules?.retreatSteps ?? 2;
-                  const order: CellType[] = ["start", "end", "fly", "retreat", "safe", "normal"];
-                  return order.map((type) => {
-                    const list = groups[type];
-                    if (list.length === 0) return null;
-                    return (
-                      <div key={type} className="mb-3">
-                        <div className="text-xs font-bold text-stone-500 uppercase mb-1">{TYPE_ICON[type]} {TYPE_LABEL[type]}（{list.length}）</div>
-                        {list.map((c) => (
-                          <div key={c.index} className="flex items-center gap-2 py-1 px-2 rounded-lg text-sm hover:bg-stone-50">
-                            <span className="text-stone-400 text-xs w-6 tabular-nums">#{c.index}</span>
-                            <span className="flex-1">{cellSummary(c, flySteps, retreatSteps)}</span>
-                          </div>
-                        ))}
+              <div className="overflow-y-auto p-4 space-y-3">
+                {/* Board grid */}
+                <div className="w-full max-w-[320px] mx-auto">
+                  <Board cells={contentBoard.cells} state={mockState} players={mockPlayers}
+                    onCellClick={(cell) => {
+                      if (cell.type !== "start" && cell.type !== "end") {
+                        setEditCellIdx(cell.index);
+                        setEditCellText(cell.label || "");
+                      }
+                    }} />
+                </div>
+
+                {/* Inline edit */}
+                {editCellIdx !== null && (() => {
+                  const cell = contentBoard.cells.find((c) => c.index === editCellIdx);
+                  return (
+                    <div className="bg-stone-50 rounded-xl p-3 border border-stone-200">
+                      <div className="text-xs text-stone-500 mb-1">编辑 #{editCellIdx}</div>
+                      <textarea value={editCellText} onChange={(e) => setEditCellText(e.target.value)}
+                        className="w-full px-2 py-1 rounded border border-stone-300 text-sm resize-none" rows={2} maxLength={30} autoFocus />
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={handleSaveCell} className="px-3 py-1 bg-stone-900 text-white rounded text-xs">保存</button>
+                        <button onClick={() => setEditCellIdx(null)} className="px-3 py-1 border border-stone-300 rounded text-xs">取消</button>
                       </div>
-                    );
-                  });
+                    </div>
+                  );
                 })()}
+
+                {/* Rules */}
+                <div className="bg-stone-50 rounded-xl p-3 border border-stone-200">
+                  <div className="text-xs font-bold text-stone-500 mb-2">规则</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>🏁 起点：所有玩家出发位</div>
+                    <div>⏳ 半程：已过半程</div>
+                    <div>✈ 飞行：前进 {flySteps} 步</div>
+                    <div>↩ 后退：后退 {retreatSteps} 步</div>
+                    <div>🛡 安全：不会被撞</div>
+                    <div>★ 终点：抵达计分</div>
+                  </div>
+                  <div className="mt-2 text-xs text-stone-400">碰撞：踩到对手格→对手回起点（起点和终点不受碰撞）。4 个棋子全部抵达终点获胜。</div>
+                </div>
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
       </main>
     );
   }

@@ -68,6 +68,22 @@ const TEMPLATES: BoardRecord[] = [
     rules: { flySteps: FLY_STEPS, retreatSteps: RETREAT_STEPS },
     is_template: true, is_public: true, owner_id: null,
   },
+  {
+    id: "00000000-0000-0000-0000-000000000003",
+    name: "贪吃蛇双人棋盘", description: "9×9 蛇形路径，48格，2人从同一起点出发",
+    player_count: 2, board_size: 9,
+    cells: buildCells({}, undefined, 2),
+    rules: { flySteps: FLY_STEPS, retreatSteps: RETREAT_STEPS },
+    is_template: true, is_public: true, owner_id: null,
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000004",
+    name: "贪吃蛇四人棋盘", description: "9×9 蛇形路径，48格，4人从同一起点出发",
+    player_count: 4, board_size: 9,
+    cells: buildCells({}, undefined, 4),
+    rules: { flySteps: FLY_STEPS, retreatSteps: RETREAT_STEPS },
+    is_template: true, is_public: true, owner_id: null,
+  },
 ];
 
 let seeded = false;

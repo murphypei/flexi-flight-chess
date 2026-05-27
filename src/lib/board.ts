@@ -28,9 +28,8 @@ const ALL_PLAYERS = [
 ];
 
 export function makePlayers(count: number): Player[] {
-  const OUTER = 4 * BOARD_SIZE - 4; // 32 — starts on outer ring only
   return ALL_PLAYERS.slice(0, count).map((p, i) => ({
-    ...p, startIndex: Math.floor((i * OUTER) / count),
+    ...p, startIndex: 0,  // all players start from the same cell
   }));
 }
 
@@ -38,7 +37,7 @@ export function makePlayers(count: number): Player[] {
 // Types
 // ============================================================
 
-export type CellType = "normal" | "start" | "safe" | "fly" | "retreat" | "end";
+export type CellType = "normal" | "start" | "safe" | "fly" | "retreat" | "halfway" | "end";
 export type PlayerColor = "red" | "blue" | "green" | "yellow";
 
 export interface Cell {
@@ -72,6 +71,10 @@ export interface GameState {
 // ============================================================
 
 export function indexToGrid(i: number): { row: number; col: number } {
+  // Snake layout special cases
+  if (i === 31) return { row: 3, col: 2 };    // outer→inner snake bridge
+  if (i === 47) return { row: 5, col: 4 };    // inner→center snake bridge
+
   const N = BOARD_SIZE;
 
   // Outer ring (0..OUTER-1)
@@ -87,7 +90,7 @@ export function indexToGrid(i: number): { row: number; col: number } {
 
   // Inner ring (OUTER..OUTER+INNER-1)
   let j = i - OUTER;
-  const s = INNER_START; // start row/col
+  const s = INNER_START;
   const M = INNER_SIZE;
   if (j < M) return { row: s, col: s + j };
   j -= M;
@@ -123,10 +126,9 @@ const PARTY_LABELS: string[] = [
 export function buildCells(
   labels: Record<number, string> = {},
   rules?: { flyCells?: number[]; retreatCells?: number[]; safeCells?: number[] },
-  playerCount = 2
+  _playerCount = 2
 ): Cell[] {
-  const players = makePlayers(playerCount as 2 | 4);
-  const startSet = new Set(players.map((p) => p.startIndex));
+  const startSet = new Set([0]); // all players start from index 0
 
   let flyCells = rules?.flyCells ?? [];
   let retreatCells = rules?.retreatCells ?? [];
@@ -147,9 +149,8 @@ export function buildCells(
   for (let i = 0; i < RING_LENGTH; i++) {
     let type: CellType = "normal";
     let effect: Cell["effect"];
-    let player: number | undefined;
 
-    if (startSet.has(i)) { type = "start"; player = players.find((p) => p.startIndex === i)!.id; }
+    if (startSet.has(i)) { type = "start"; }
     else if (flySet.has(i)) { type = "fly"; effect = { target: (i + FLY_STEPS) % RING_LENGTH }; }
     else if (retreatSet.has(i)) { type = "retreat"; effect = { steps: RETREAT_STEPS }; }
     else if (safeSet.has(i)) { type = "safe"; }
@@ -162,9 +163,15 @@ export function buildCells(
       cellLabel = normalIdx >= 0 ? (PARTY_LABELS[normalIdx % PARTY_LABELS.length] ?? "") : "";
     }
 
-    cells.push({ index: i, ...indexToGrid(i), type, player, effect, label: cellLabel || undefined });
+    cells.push({ index: i, ...indexToGrid(i), type, effect, label: cellLabel || undefined });
   }
 
+  // Halfway marker at cell 24
+  const halfwayCell = cells.find((c) => c.index === 24);
+  if (halfwayCell) {
+    halfwayCell.type = "halfway";
+    if (!halfwayCell.label) halfwayCell.label = "半程";
+  }
   cells.push({ index: RING_LENGTH, row: CENTER_ROW, col: CENTER_ROW, type: "end" });
   return cells;
 }
@@ -173,9 +180,11 @@ export function buildCells(
 // Piece helpers
 // ============================================================
 
-export function getPieceCellIndex(piece: Piece, players: Player[]): number {
+export function getPieceCellIndex(piece: Piece, _players: Player[]): number {
   if (piece.steps >= RING_LENGTH) return CENTER_INDEX;
-  return (players[piece.player].startIndex + piece.steps) % RING_LENGTH;
+  // All players start from 0; two-phase path: outer(0..31) → inner(32..47)
+  if (piece.steps < OUTER) return piece.steps;
+  return OUTER + ((piece.steps - OUTER) % INNER);
 }
 
 export function getPieceGrid(piece: Piece, players: Player[]): { row: number; col: number } {
@@ -185,7 +194,7 @@ export function getPieceGrid(piece: Piece, players: Player[]): { row: number; co
 }
 
 export function getCellContent(cell: Cell): string | null {
-  if (cell.type === "normal" && cell.label) return cell.label;
+  if ((cell.type === "normal" || cell.type === "halfway") && cell.label) return cell.label;
   if (cell.type === "fly") {
     const dist = cell.effect?.target !== undefined
       ? ((cell.effect.target - cell.index) % RING_LENGTH + RING_LENGTH) % RING_LENGTH
@@ -234,7 +243,8 @@ export function applyMove(state: GameState, diceValue: number, cells: Cell[], pl
 
   if (piece.steps + diceValue > RING_LENGTH) {
     const bouncedSteps = 2 * RING_LENGTH - piece.steps - diceValue;
-    const bouncedIdx = (players[playerIdx].startIndex + bouncedSteps) % RING_LENGTH;
+    const bouncePiece = { player: playerIdx, steps: bouncedSteps };
+    const bouncedIdx = getPieceCellIndex(bouncePiece, players);
     const newPieces = state.pieces.map((p, i) => i === playerIdx ? { ...p, steps: bouncedSteps } : { ...p });
     for (let o = 0; o < playerCount; o++) {
       if (o === playerIdx) continue;
@@ -260,16 +270,15 @@ export function applyMove(state: GameState, diceValue: number, cells: Cell[], pl
       popupMessage: "🎉 棋子抵达终点" };
   }
 
-  const landedIdx = (players[playerIdx].startIndex + newSteps) % RING_LENGTH;
+  const landedIdx = getPieceCellIndex({ player: playerIdx, steps: newSteps }, players);
   const landedCell = cells[landedIdx];
   const popupMessage = getCellContent(landedCell);
   const messages: string[] = [];
 
   if (landedCell.type === "fly" && landedCell.effect?.target !== undefined) {
-    const s = (landedCell.effect.target - players[playerIdx].startIndex + RING_LENGTH) % RING_LENGTH;
-    if (s > 0 && s < RING_LENGTH) {
-      const flyDist = ((landedCell.effect.target - landedIdx) % RING_LENGTH + RING_LENGTH) % RING_LENGTH;
-      newSteps = s;
+    const flyDist = ((landedCell.effect.target - landedIdx) % RING_LENGTH + RING_LENGTH) % RING_LENGTH;
+    if (flyDist > 0) {
+      newSteps = Math.min(newSteps + flyDist, RING_LENGTH - 1);
       messages.push(`✈ 飞行 +${flyDist}`);
     }
   } else if (landedCell.type === "retreat" && landedCell.effect?.steps !== undefined) {
@@ -278,7 +287,7 @@ export function applyMove(state: GameState, diceValue: number, cells: Cell[], pl
   } else if (landedCell.type === "safe") { messages.push("🛡 安全区"); }
   else if (landedCell.label) { messages.push(landedCell.label); }
 
-  const finalIdx = (players[playerIdx].startIndex + newSteps) % RING_LENGTH;
+  const finalIdx = getPieceCellIndex({ player: playerIdx, steps: newSteps }, players);
   const newPieces = state.pieces.map((p) => p);
   newPieces[playerIdx] = { ...piece, steps: newSteps };
   for (let o = 0; o < playerCount; o++) {

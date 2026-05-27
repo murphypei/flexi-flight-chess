@@ -34,6 +34,7 @@ export default function BoardEditPage() {
   const [retreatSteps, setRetreatSteps] = useState(RETREAT_STEPS);
   const [isPublic, setIsPublic] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  const [rulesDesc, setRulesDesc] = useState("");
   const [loadError, setLoadError] = useState("");
 
   // Read URL params & session on client mount — useState initializers can't use window (SSR)
@@ -66,6 +67,7 @@ export default function BoardEditPage() {
       setCells(b.cells);
       if (b.rules?.flySteps) setFlySteps(b.rules.flySteps);
       if (b.rules?.retreatSteps) setRetreatSteps(b.rules.retreatSteps);
+      if (b.rules?.description) setRulesDesc(b.rules.description);
       setIsPublic(b.is_public);
     });
   }, [editId]);
@@ -76,17 +78,15 @@ export default function BoardEditPage() {
     if (step !== "edit") return;
     const newCells: Cell[] = [];
     for (let i = 0; i < RING_LENGTH; i++) {
-      const isStart = startIndices.has(i);
       newCells.push({
         index: i, ...indexToGrid(i),
-        type: isStart ? "start" : "normal",
-        player: isStart ? (i === 0 ? 0 : i === Math.floor(RING_LENGTH / 2) ? 1 : i === Math.floor(RING_LENGTH / 4) ? 2 : 3) : undefined,
+        type: i === 0 ? "start" : "normal",
         label: "",
       });
     }
     newCells.push({ index: CENTER_INDEX, row: Math.ceil(BOARD_SIZE / 2), col: Math.ceil(BOARD_SIZE / 2), type: "end" });
     setCells(newCells);
-  }, [initDone, step, playerCount, startIndices, editId]);
+  }, [initDone, step, playerCount, editId]);
 
   function handlePlayerSelect(count: 2 | 4) {
     setPlayerCount(count);
@@ -105,9 +105,9 @@ export default function BoardEditPage() {
     const newCells = cells.map((c) => {
       if (c.index !== selectedIdx) return c;
       if (editType === "normal") return { ...c, type: "normal" as CellType, label: editText, effect: undefined };
-      if (editType === "fly") return { ...c, type: "fly" as CellType, label: "", effect: { target: (c.index + flySteps) % RING_LENGTH } };
-      if (editType === "retreat") return { ...c, type: "retreat" as CellType, label: "", effect: { steps: retreatSteps } };
-      if (editType === "safe") return { ...c, type: "safe" as CellType, label: "", effect: undefined };
+      if (editType === "fly") return { ...c, type: "fly" as CellType, effect: { target: (c.index + flySteps) % RING_LENGTH } };
+      if (editType === "retreat") return { ...c, type: "retreat" as CellType, effect: { steps: retreatSteps } };
+      if (editType === "safe") return { ...c, type: "safe" as CellType, effect: undefined };
       return c;
     });
     setCells(newCells);
@@ -122,7 +122,7 @@ export default function BoardEditPage() {
       if (editId) {
         await updateBoard(editId, {
           name: boardName.trim(), player_count: playerCount, is_public: isPublic,
-          cells, rules: { flySteps, retreatSteps },
+          cells, rules: { flySteps, retreatSteps, description: rulesDesc },
         });
         alert("已更新！");
       } else {
@@ -130,7 +130,7 @@ export default function BoardEditPage() {
           name: boardName.trim(),
           description: `${BOARD_SIZE}×${BOARD_SIZE} 回字形，${playerCount}人自定义`,
           player_count: playerCount, board_size: BOARD_SIZE,
-          cells, rules: { flySteps, retreatSteps },
+          cells, rules: { flySteps, retreatSteps, description: rulesDesc },
           is_template: false, is_public: isPublic, owner_id: user.id,
         });
         alert("保存成功！");
@@ -153,7 +153,7 @@ export default function BoardEditPage() {
         name: newName.trim(),
         description: `${BOARD_SIZE}×${BOARD_SIZE} 回字形，${playerCount}人自定义`,
         player_count: playerCount, board_size: BOARD_SIZE,
-        cells, rules: { flySteps, retreatSteps },
+        cells, rules: { flySteps, retreatSteps, description: rulesDesc },
         is_template: false, is_public: isPublic, owner_id: user.id,
       });
       alert("副本已保存！");
@@ -278,6 +278,12 @@ export default function BoardEditPage() {
                 className="w-20 px-3 py-2 rounded-lg border border-stone-300 text-sm text-center" />
               <span className="text-xs text-stone-400">落地后回退</span>
             </div>
+            <div>
+              <label className="text-sm font-medium text-stone-700 mb-1 block">自定义规则描述</label>
+              <textarea value={rulesDesc} onChange={(e) => setRulesDesc(e.target.value)}
+                placeholder="可选：添加额外的规则说明，会在游戏中展示"
+                className="w-full px-3 py-2 rounded-lg border border-stone-300 text-sm resize-none" rows={2} maxLength={200} />
+            </div>
           </div>
         )}
 
@@ -300,19 +306,18 @@ export default function BoardEditPage() {
               );
               const isStart = cell.type === "start";
               const isSelected = cell.index === selectedIdx;
-              const color = isStart && cell.player !== undefined
-                ? ["#EF4444", "#3B82F6", "#22C55E", "#EAB308"][cell.player]
-                : undefined;
 
               return (
                 <div
                   key={cell.index}
-                  style={{ gridRow: cell.row, gridColumn: cell.col, backgroundColor: isStart ? color : undefined }}
-                  className={`relative border border-stone-300 flex items-center justify-center rounded-sm text-[8px] leading-tight text-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all ${isSelected ? "ring-2 ring-blue-500 z-10" : ""} ${isStart ? "cursor-default hover:ring-0" : ""}`}
+                  style={{ gridRow: cell.row, gridColumn: cell.col }}
+                  className={`relative border border-stone-300 flex items-center justify-center rounded-sm text-[8px] leading-tight text-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all ${isSelected ? "ring-2 ring-blue-500 z-10" : ""} ${isStart ? "cursor-default hover:ring-0 bg-white" : ""} ${cell.index === 24 ? "bg-amber-100" : ""}`}
                   onClick={() => handleCellClick(cell)}
                 >
                   {isStart ? (
-                    <span className="text-white text-xs font-bold">★</span>
+                    <span className="text-[11px]">🏁</span>
+                  ) : cell.type === "halfway" ? (
+                    <span className="text-amber-800 text-[8px]">{cell.label || "半程"}</span>
                   ) : cell.type === "fly" ? (
                     <span className="text-cyan-600 text-sm">✈</span>
                   ) : cell.type === "retreat" ? (

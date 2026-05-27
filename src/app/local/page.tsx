@@ -26,6 +26,10 @@ function LocalGame() {
   const [cells, setCells] = useState<Cell[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [state, setState] = useState<GameState | null>(null);
+  const [flySteps, setFlySteps] = useState(3);
+  const [retreatSteps, setRetreatSteps] = useState(2);
+  const [rulesDesc, setRulesDesc] = useState("");
+  const [showRules, setShowRules] = useState(false);
   const [popup, setPopup] = useState<{ text: string; color: string } | null>(null);
   const rollingRef = useRef(false);
   const popupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -39,6 +43,9 @@ function LocalGame() {
 
         setBoardName(board.name);
         setCells(board.cells);
+        if (board.rules?.flySteps) setFlySteps(board.rules.flySteps);
+        if (board.rules?.retreatSteps) setRetreatSteps(board.rules.retreatSteps);
+        if (board.rules?.description) setRulesDesc(board.rules.description);
 
         const gamePlayers = makePlayers(playerCount);
         setPlayers(gamePlayers);
@@ -182,6 +189,49 @@ function LocalGame() {
             <button onClick={() => router.push("/")} className="mt-3 px-4 py-2 bg-stone-900 text-white rounded-lg text-sm">返回棋盘列表</button>
           </div>
         )}
+
+        {/* Rules toggle & panel */}
+        <div className="mt-4">
+          <button onClick={() => setShowRules(!showRules)} className="text-sm text-stone-500 hover:text-stone-700 bg-white px-3 py-1.5 rounded-lg border border-stone-200">
+            {showRules ? "▲ 收起规则" : "📋 本局规则"}
+          </button>
+          {showRules && (
+            <div className="mt-2 bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-stone-50 rounded-xl p-3">
+                  <div className="text-xs text-stone-500 mb-0.5">棋盘名称</div>
+                  <div className="font-semibold">{boardName}</div>
+                </div>
+                <div className="bg-stone-50 rounded-xl p-3">
+                  <div className="text-xs text-stone-500 mb-0.5">游戏人数</div>
+                  <div className="font-semibold">{playerCount} 人</div>
+                </div>
+                <div className="bg-cyan-50 rounded-xl p-3">
+                  <div className="text-xs text-cyan-600 mb-0.5">✈ 飞行格子</div>
+                  <div className="font-semibold text-cyan-700">落地后前进 {flySteps} 步</div>
+                </div>
+                <div className="bg-amber-50 rounded-xl p-3">
+                  <div className="text-xs text-amber-600 mb-0.5">↩ 后退格子</div>
+                  <div className="font-semibold text-amber-700">落地后退回 {retreatSteps} 步</div>
+                </div>
+                <div className="bg-rose-50 rounded-xl p-3">
+                  <div className="text-xs text-rose-600 mb-0.5">🛡 安全区</div>
+                  <div className="font-semibold text-rose-700">不会被撞飞</div>
+                </div>
+                <div className="bg-stone-50 rounded-xl p-3">
+                  <div className="text-xs text-stone-500 mb-0.5">★ 终点</div>
+                  <div className="font-semibold">超出步数会反弹</div>
+                </div>
+              </div>
+              {rulesDesc && (
+                <div className="mt-3 text-xs text-stone-600 bg-stone-50 rounded-lg p-2 whitespace-pre-wrap">{rulesDesc}</div>
+              )}
+              <div className="mt-3 text-xs text-stone-400">
+                碰撞规则：落在对手同一格时，将对手棋子撞回起点（安全区和起点不受碰撞）。率先将 4 个棋子全部送到终点者获胜。
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </main>
   );

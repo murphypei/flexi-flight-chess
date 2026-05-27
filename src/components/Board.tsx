@@ -18,18 +18,34 @@ const PLAYER_COLORS: Record<number, { bg: string; soft: string }> = {
 };
 
 function CellInner({ cell }: { cell: Cell }) {
-  if (cell.type === "start" && cell.player !== undefined) {
-    const c = PLAYER_COLORS[cell.player] || PLAYER_COLORS[0];
-    return <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: c.bg }}>
-      <span className="text-white text-xs font-bold">★</span></div>;
+  // Structural cells identified by index — backgrounds never change with type
+  const isStart = cell.index === 0;
+  const isEnd = cell.index === 48;
+  const isHalfway = cell.index === 24;
+
+  if (isStart) {
+    return <div className="absolute inset-0 flex items-center justify-center bg-white">
+      <div className="flex flex-col items-center gap-0.5">
+        <span className="text-[11px] leading-none">🏁</span>
+        <span className="text-[8px] font-bold text-stone-700 leading-none">起点</span>
+      </div></div>;
   }
-  if (cell.type === "end") {
+  if (isEnd) {
     return <div className="absolute inset-0 flex items-center justify-center bg-stone-800">
       <span className="text-amber-300 text-lg">★</span></div>;
   }
-  if (cell.type === "fly") return <span className="text-cyan-600 text-sm">✈</span>;
-  if (cell.type === "retreat") return <span className="text-amber-600 text-sm font-bold">↩</span>;
-  if (cell.type === "safe") return <span className="text-rose-500 text-xs">🛡</span>;
+
+  // Special backgrounds that persist regardless of cell type
+  if (isHalfway) {
+    const label = cell.label || "半程";
+    const short = label.length > 6 ? label.slice(0, 6) + "…" : label;
+    return <div className="absolute inset-0 flex items-center justify-center bg-amber-100">
+      <span className="text-[8px] text-amber-800 leading-tight text-center px-0.5 font-medium">{short}</span></div>;
+  }
+  // Regular cells — type-based rendering without fixed background
+  if (cell.type === "fly") return <span className="text-cyan-600 text-sm">{cell.label || "✈"}</span>;
+  if (cell.type === "retreat") return <span className="text-amber-600 text-sm font-bold">{cell.label || "↩"}</span>;
+  if (cell.type === "safe") return <span className="text-rose-500 text-xs">{cell.label || "🛡"}</span>;
   if (cell.type === "normal" && cell.label) {
     const short = cell.label.length > 8 ? cell.label.slice(0, 8) + "…" : cell.label;
     return <span className="text-[9px] text-stone-600 leading-tight text-center px-0.5 font-medium">{short}</span>;
@@ -39,9 +55,8 @@ function CellInner({ cell }: { cell: Cell }) {
 
 export default function Board({ cells, state, players, onCellClick }: BoardProps) {
   const runwayColors = new Map<number, string>();
-  players.forEach((p) => {
-    runwayColors.set((p.startIndex + 1) % RING_LENGTH, PLAYER_COLORS[p.id].soft);
-  });
+  // Shared start at index 0: single runway cell at index 1
+  runwayColors.set(1, "#E7E5E4");
 
   const overlap = new Set<number>();
   const seen = new Map<number, number>();
