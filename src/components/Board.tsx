@@ -41,7 +41,7 @@ function CellInner({ cell }: { cell: Cell }) {
   else if (cell.type === "retreat") inner = <span className="text-amber-600 text-sm font-bold">{cell.label || "↩"}</span>;
   else if (cell.type === "safe") inner = <span className="text-rose-500 text-xs">{cell.label || "🛡"}</span>;
   else if (cell.label) {
-    const short = cell.label.length > 8 ? cell.label.slice(0, 8) + "…" : cell.label;
+    const short = cell.label.length > 5 ? cell.label.slice(0, 5) + "…" : cell.label;
     inner = <span className="text-[9px] text-stone-600 leading-tight text-center px-0.5 font-medium">{short}</span>;
   }
 

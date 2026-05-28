@@ -322,7 +322,7 @@ export default function BoardEditPage() {
                   ) : cell.type === "safe" ? (
                     <span className="text-rose-500 text-xs">🛡</span>
                   ) : cell.label ? (
-                    <span className="text-stone-600 px-0.5">{cell.label.length > 8 ? cell.label.slice(0, 8) + "…" : cell.label}</span>
+                    <span className="text-stone-600 px-0.5">{cell.label.length > 5 ? cell.label.slice(0, 5) + "…" : cell.label}</span>
                   ) : (
                     <span className="text-stone-300">+</span>
                   )}
