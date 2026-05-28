@@ -3,18 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  BOARD_SIZE, Cell, CellType, CENTER_INDEX, indexToGrid, makePlayers, RING_LENGTH,
+  BOARD_SIZE, Cell, CellType, CENTER_INDEX, START_INDEX, HALFWAY_INDEX, indexToGrid, makePlayers, RING_LENGTH,
 } from "@/lib/board";
 import { createBoard, getBoard, updateBoard } from "@/lib/db";
 import { FLY_STEPS, RETREAT_STEPS } from "@/lib/board";
 import { getSession, User } from "@/lib/auth";
 
-const TYPES: { value: CellType; label: string; icon: string }[] = [
-  { value: "normal", label: "普通", icon: "📝" },
-  { value: "fly", label: "飞行 +3", icon: "✈" },
-  { value: "retreat", label: "后退 -2", icon: "↩" },
-  { value: "safe", label: "安全", icon: "🛡" },
-];
+const TYPE_ICONS: Record<CellType, string> = {
+  normal: "📝", fly: "✈", retreat: "↩", safe: "🛡", start: "★", halfway: "⏳", end: "★",
+};
 
 export default function BoardEditPage() {
   const router = useRouter();
@@ -80,7 +77,7 @@ export default function BoardEditPage() {
     for (let i = 0; i < RING_LENGTH; i++) {
       newCells.push({
         index: i, ...indexToGrid(i),
-        type: i === 0 ? "start" : "normal",
+        type: i === START_INDEX ? "start" : "normal",
         label: "",
       });
     }
@@ -135,7 +132,7 @@ export default function BoardEditPage() {
         });
         alert("保存成功！");
       }
-      router.push("/board/new");
+      router.push("/");
     } catch (e: any) {
       alert("保存失败: " + (e.message || ""));
     }
@@ -157,7 +154,7 @@ export default function BoardEditPage() {
         is_template: false, is_public: isPublic, owner_id: user.id,
       });
       alert("副本已保存！");
-      router.push("/board/new");
+      router.push("/");
     } catch (e: any) {
       alert("保存失败: " + (e.message || ""));
     }
@@ -181,7 +178,7 @@ export default function BoardEditPage() {
           <h1 className="text-xl font-bold mb-2">请先登录</h1>
           <p className="text-sm text-stone-500 mb-4">登录后可创建和编辑自定义棋盘</p>
           <button onClick={() => router.push("/login")} className="w-full py-3 bg-stone-900 text-white rounded-xl font-semibold text-sm">登录 / 注册</button>
-          <button onClick={() => router.push("/board/new")} className="w-full text-sm text-stone-500 mt-3">← 返回棋盘列表</button>
+          <button onClick={() => router.push("/")} className="w-full text-sm text-stone-500 mt-3">← 返回首页</button>
         </div>
       </main>
     );
@@ -193,7 +190,7 @@ export default function BoardEditPage() {
       <main className="min-h-screen flex items-center justify-center p-4" style={{ background: "linear-gradient(135deg, #FEF3E2 0%, #FDF8EE 50%, #F0F4FF 100%)" }}>
         <div className="bg-white rounded-2xl p-6 shadow-lg max-w-sm w-full text-center">
           <p className="text-red-500 mb-4">{loadError}</p>
-          <button onClick={() => router.push("/board/new")} className="px-4 py-2 bg-stone-900 text-white rounded-lg">← 返回棋盘列表</button>
+          <button onClick={() => router.push("/")} className="px-4 py-2 bg-stone-900 text-white rounded-lg">← 返回首页</button>
         </div>
       </main>
     );
@@ -223,7 +220,7 @@ export default function BoardEditPage() {
               <div className="text-xs text-stone-500 mt-1">四个起点，四角分布</div>
             </button>
           </div>
-          <button onClick={() => router.push("/board/new")} className="w-full text-sm text-stone-500 mt-3">← 返回</button>
+          <button onClick={() => router.push("/")} className="w-full text-sm text-stone-500 mt-3">← 返回首页</button>
         </div>
       </main>
     );
@@ -311,7 +308,7 @@ export default function BoardEditPage() {
                 <div
                   key={cell.index}
                   style={{ gridRow: cell.row, gridColumn: cell.col }}
-                  className={`relative border border-stone-300 flex items-center justify-center rounded-sm text-[8px] leading-tight text-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all ${isSelected ? "ring-2 ring-blue-500 z-10" : ""} ${isStart ? "cursor-default hover:ring-0 bg-white" : ""} ${cell.index === 24 ? "bg-amber-100" : ""}`}
+                  className={`relative border border-stone-300 flex items-center justify-center rounded-sm text-[8px] leading-tight text-center cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all ${isSelected ? "ring-2 ring-blue-500 z-10" : ""} ${isStart ? "cursor-default hover:ring-0 bg-white" : ""} ${cell.index === HALFWAY_INDEX ? "bg-amber-100" : ""}`}
                   onClick={() => handleCellClick(cell)}
                 >
                   {isStart ? (
@@ -345,13 +342,18 @@ export default function BoardEditPage() {
 
             {/* Type selector */}
             <div className="grid grid-cols-4 gap-2 mb-3">
-              {TYPES.map((t) => (
+              {([
+                { value: "normal" as CellType, label: "普通" },
+                { value: "fly" as CellType, label: `飞行 +${flySteps}` },
+                { value: "retreat" as CellType, label: `后退 ${retreatSteps}` },
+                { value: "safe" as CellType, label: "安全" },
+              ]).map((t) => (
                 <button
                   key={t.value}
                   onClick={() => setEditType(t.value)}
                   className={`py-2 rounded-lg text-xs font-medium border transition-colors ${editType === t.value ? "border-stone-700 bg-stone-100" : "border-stone-200 hover:border-stone-400"}`}
                 >
-                  <div className="text-lg">{t.icon}</div>
+                  <div className="text-lg">{TYPE_ICONS[t.value]}</div>
                   <div className="mt-0.5">{t.label}</div>
                 </button>
               ))}
@@ -389,7 +391,7 @@ export default function BoardEditPage() {
           </button>
         )}
 
-        <button onClick={() => router.push("/board/new")} className="w-full text-sm text-stone-500 py-2">← 返回棋盘列表</button>
+        <button onClick={() => router.push("/")} className="w-full text-sm text-stone-500 py-2">← 返回首页</button>
       </div>
     </main>
   );

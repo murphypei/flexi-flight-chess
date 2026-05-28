@@ -98,7 +98,7 @@ export default function NewBoardPage() {
       <div className="max-w-md mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <button onClick={() => router.push("/")} className="text-sm text-stone-500">← 返回</button>
+          <button onClick={() => router.push("/")} className="text-sm text-stone-500">← 返回首页</button>
           {user ? (
             <div className="flex items-center gap-2">
               <span className="text-sm text-stone-600">{user.username}</span>
@@ -113,7 +113,7 @@ export default function NewBoardPage() {
           {mode === "online" ? "创建联网房间" : mode === "local" ? "创建单机游戏" : "选择棋盘"}
         </h1>
 
-        {/* Nickname (only for online mode) */}
+        {/* Nickname hidden only for local mode */}
         {mode !== "local" && (
           <div className="mb-4">
             <label className="block text-sm font-medium text-stone-700 mb-1">昵称（联网需要）</label>

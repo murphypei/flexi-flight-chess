@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "飞行棋",
-  description: "本地双人飞行棋小游戏",
+  description: "多人联网飞行棋 · 自定义棋盘 · 单机/联机双模式",
 };
 
 export const viewport: Viewport = {

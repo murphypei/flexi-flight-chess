@@ -51,7 +51,7 @@ function LocalGame() {
         setPlayers(gamePlayers);
 
         const gs = initGameState(playerCount);
-        gs.message = gamePlayers[0].name + " 先手 · 点击骰子开始";
+        gs.message = gamePlayers[0].name + " 先手 · 掷 1、2、3 出发";
         setState(gs);
 
         setLoading(false);
@@ -65,7 +65,7 @@ function LocalGame() {
   function showPopup(msg: string, color: string) {
     if (popupTimerRef.current) clearTimeout(popupTimerRef.current);
     setPopup({ text: msg, color });
-    popupTimerRef.current = setTimeout(() => setPopup(null), 30000);
+    popupTimerRef.current = setTimeout(() => setPopup(null), 2500);
   }
 
   function dismissPopup() {
@@ -93,13 +93,13 @@ function LocalGame() {
     return <div className="min-h-screen flex items-center justify-center bg-stone-100"><div className="w-8 h-8 border-2 border-stone-700 border-t-transparent rounded-full animate-spin" /></div>;
   }
   if (error) {
-    return <div className="min-h-screen flex items-center justify-center bg-stone-100"><div className="text-center"><p className="text-red-500 mb-4">{error}</p><button onClick={() => router.push("/")} className="px-4 py-2 bg-stone-900 text-white rounded-lg">返回棋盘列表</button></div></div>;
+    return <div className="min-h-screen flex items-center justify-center bg-stone-100"><div className="text-center"><p className="text-red-500 mb-4">{error}</p><button onClick={() => router.push("/")} className="px-4 py-2 bg-stone-900 text-white rounded-lg">返回首页</button></div></div>;
   }
   if (!state) return null;
 
   const ringLen = cells.length - 1;
   const currentPlayer = state.currentPlayer;
-  const showDiceValue = (state.isRolling || popup) ? state.diceValue : null;
+  const showDiceValue = state.diceValue;
 
   return (
     <main className="min-h-screen text-stone-800" style={{ background: "linear-gradient(135deg, #FEF3E2 0%, #FDF8EE 50%, #F0F4FF 100%)" }}>
@@ -121,7 +121,7 @@ function LocalGame() {
             </div>
             <div>
               <p className="text-base font-bold" style={{ color: PLAYER_HEX[currentPlayer] }}>{players[currentPlayer]?.name}回合</p>
-              <p className="text-xs text-stone-600">点击骰子</p>
+              <p className="text-xs text-stone-600">{state.message}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -138,10 +138,9 @@ function LocalGame() {
         <div className="mb-4 relative">
           <Board cells={cells} state={state} players={players} />
           {popup && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 rounded-2xl">
-              <div className="bg-white rounded-2xl px-6 py-5 mx-8 text-center shadow-xl max-w-sm">
-                <p className="text-xl font-bold leading-relaxed mb-4" style={{ color: popup.color }}>{popup.text}</p>
-                <button onClick={dismissPopup} className="px-6 py-2 bg-stone-900 text-white rounded-xl text-sm font-semibold">关闭</button>
+            <div className="absolute bottom-2 left-2 right-2 z-50 flex justify-center pointer-events-none">
+              <div className="bg-white rounded-2xl px-5 py-3 shadow-lg border border-stone-200 pointer-events-auto text-center animate-bounce cursor-pointer" onClick={dismissPopup}>
+                <p className="text-base font-bold" style={{ color: popup.color }}>{popup.text}</p>
               </div>
             </div>
           )}
@@ -162,6 +161,7 @@ function LocalGame() {
                       <div className="w-6 h-6 rounded-full" style={{ backgroundColor: PLAYER_HEX[p.id] }} />
                       <span className="text-sm font-medium">{p.name}</span>
                       {state.currentPlayer === i && !state.winner && <span className="text-[10px] font-bold" style={{ color: PLAYER_HEX[p.id] }}>回合中</span>}
+                      {!state.ready?.[i] && !state.winner && <span className="text-[10px] text-stone-400">未出发</span>}
                     </div>
                     <span className="text-xs text-stone-600 tabular-nums">{steps === ringLen ? "🏁" : `${steps}/${ringLen}`}</span>
                   </div>
@@ -186,7 +186,7 @@ function LocalGame() {
         {state.winner !== null && (
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200 text-center">
             <p className="text-xl font-bold" style={{ color: PLAYER_HEX[state.winner] }}>🎉 {players[state.winner].name} 获胜！</p>
-            <button onClick={() => router.push("/")} className="mt-3 px-4 py-2 bg-stone-900 text-white rounded-lg text-sm">返回棋盘列表</button>
+            <button onClick={() => router.push("/")} className="mt-3 px-4 py-2 bg-stone-900 text-white rounded-lg text-sm">返回首页</button>
           </div>
         )}
 
@@ -226,8 +226,9 @@ function LocalGame() {
               {rulesDesc && (
                 <div className="mt-3 text-xs text-stone-600 bg-stone-50 rounded-lg p-2 whitespace-pre-wrap">{rulesDesc}</div>
               )}
-              <div className="mt-3 text-xs text-stone-400">
-                碰撞规则：落在对手同一格时，将对手棋子撞回起点（安全区和起点不受碰撞）。率先将 4 个棋子全部送到终点者获胜。
+              <div className="mt-3 text-xs text-stone-400 space-y-1">
+                <p>出发规则：棋子初始为准备状态，需掷出 1、2、3 才能出发。出发当回合留在起点，下回合开始前进。</p>
+                <p>碰撞规则：踩到对手格→对手回退。未过半程（24格前）的棋子撞回起点；已过半程的棋子撞回半程（黄色格）。安全区和起点不受碰撞。</p>
               </div>
             </div>
           )}

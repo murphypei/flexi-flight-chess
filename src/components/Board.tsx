@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  BOARD_SIZE, Cell, CENTER_INDEX, GameState,
-  getPieceCellIndex, getPieceGrid, Player, RING_LENGTH,
+  BOARD_SIZE, Cell, CENTER_INDEX, START_INDEX, HALFWAY_INDEX, GameState,
+  getPieceCellIndex, getPieceGrid, Player,
 } from "@/lib/board";
 
 interface BoardProps {
@@ -19,9 +19,9 @@ const PLAYER_COLORS: Record<number, { bg: string; soft: string }> = {
 
 function CellInner({ cell }: { cell: Cell }) {
   // Structural cells identified by index — backgrounds never change with type
-  const isStart = cell.index === 0;
-  const isEnd = cell.index === 48;
-  const isHalfway = cell.index === 24;
+  const isStart = cell.index === START_INDEX;
+  const isEnd = cell.index === CENTER_INDEX;
+  const isHalfway = cell.index === HALFWAY_INDEX;
 
   if (isStart) {
     return <div className="absolute inset-0 flex items-center justify-center bg-white">
@@ -35,29 +35,24 @@ function CellInner({ cell }: { cell: Cell }) {
       <span className="text-amber-300 text-lg">★</span></div>;
   }
 
-  // Special backgrounds that persist regardless of cell type
-  if (isHalfway) {
-    const label = cell.label || "半程";
-    const short = label.length > 6 ? label.slice(0, 6) + "…" : label;
-    return <div className="absolute inset-0 flex items-center justify-center bg-amber-100">
-      <span className="text-[8px] text-amber-800 leading-tight text-center px-0.5 font-medium">{short}</span></div>;
-  }
-  // Regular cells — type-based rendering without fixed background
-  if (cell.type === "fly") return <span className="text-cyan-600 text-sm">{cell.label || "✈"}</span>;
-  if (cell.type === "retreat") return <span className="text-amber-600 text-sm font-bold">{cell.label || "↩"}</span>;
-  if (cell.type === "safe") return <span className="text-rose-500 text-xs">{cell.label || "🛡"}</span>;
-  if (cell.type === "normal" && cell.label) {
+  // Type-based content
+  let inner: React.ReactNode = null;
+  if (cell.type === "fly") inner = <span className="text-cyan-600 text-sm">{cell.label || "✈"}</span>;
+  else if (cell.type === "retreat") inner = <span className="text-amber-600 text-sm font-bold">{cell.label || "↩"}</span>;
+  else if (cell.type === "safe") inner = <span className="text-rose-500 text-xs">{cell.label || "🛡"}</span>;
+  else if (cell.label) {
     const short = cell.label.length > 8 ? cell.label.slice(0, 8) + "…" : cell.label;
-    return <span className="text-[9px] text-stone-600 leading-tight text-center px-0.5 font-medium">{short}</span>;
+    inner = <span className="text-[9px] text-stone-600 leading-tight text-center px-0.5 font-medium">{short}</span>;
   }
-  return null;
+
+  // Halfway cell: amber background + type content on top
+  if (isHalfway) {
+    return <div className="absolute inset-0 flex items-center justify-center bg-amber-100">{inner}</div>;
+  }
+  return inner;
 }
 
 export default function Board({ cells, state, players, onCellClick }: BoardProps) {
-  const runwayColors = new Map<number, string>();
-  // Shared start at index 0: single runway cell at index 1
-  runwayColors.set(1, "#E7E5E4");
-
   const overlap = new Set<number>();
   const seen = new Map<number, number>();
   state.pieces.forEach((piece, i) => {
@@ -74,7 +69,7 @@ export default function Board({ cells, state, players, onCellClick }: BoardProps
         aspectRatio: "1 / 1", width: "100%",
       }}>
       {cells.map((cell) => {
-        const bg = runwayColors.get(cell.index) || (cell.type === "start" ? undefined : "white");
+        const bg = cell.type === "start" ? undefined : "white";
         const clickable = cell.type === "normal";
         const isCenter = cell.index === CENTER_INDEX;
         return (

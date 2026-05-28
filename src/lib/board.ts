@@ -16,6 +16,8 @@ const OUTER = 4 * BOARD_SIZE - 4;                        // 32
 const INNER = 4 * INNER_SIZE - 4;                        // 16
 export const RING_LENGTH = OUTER + INNER;                // 48
 export const CENTER_INDEX = RING_LENGTH;
+export const START_INDEX = 0;
+export const HALFWAY_INDEX = 24;
 export const CENTER_ROW = Math.ceil(BOARD_SIZE / 2);
 export const INNER_START = Math.ceil((BOARD_SIZE - INNER_SIZE) / 2) + 1;
 
@@ -57,6 +59,7 @@ export interface GameState {
   pieces: Piece[];
   homeCount: number[];
   endCount: number[];
+  ready: boolean[];
   currentPlayer: number;
   lastDicePlayer: number;
   diceValue: number | null;
@@ -125,10 +128,9 @@ const PARTY_LABELS: string[] = [
 
 export function buildCells(
   labels: Record<number, string> = {},
-  rules?: { flyCells?: number[]; retreatCells?: number[]; safeCells?: number[] },
-  _playerCount = 2
+  rules?: { flyCells?: number[]; retreatCells?: number[]; safeCells?: number[] }
 ): Cell[] {
-  const startSet = new Set([0]); // all players start from index 0
+  const startSet = new Set([START_INDEX]);
 
   let flyCells = rules?.flyCells ?? [];
   let retreatCells = rules?.retreatCells ?? [];
@@ -166,12 +168,9 @@ export function buildCells(
     cells.push({ index: i, ...indexToGrid(i), type, effect, label: cellLabel || undefined });
   }
 
-  // Halfway marker at cell 24
-  const halfwayCell = cells.find((c) => c.index === 24);
-  if (halfwayCell) {
-    halfwayCell.type = "halfway";
-    if (!halfwayCell.label) halfwayCell.label = "半程";
-  }
+  // Halfway marker
+  const halfwayCell = cells.find((c) => c.index === HALFWAY_INDEX);
+  if (halfwayCell) halfwayCell.type = "halfway";
   cells.push({ index: RING_LENGTH, row: CENTER_ROW, col: CENTER_ROW, type: "end" });
   return cells;
 }
@@ -221,17 +220,22 @@ export function initGameState(playerCount: number): GameState {
     homeCount.push(PIECE_COUNT - 1);
     endCount.push(0);
   }
+  const ready: boolean[] = new Array(playerCount).fill(false);
   return {
-    pieces, homeCount, endCount,
+    pieces, homeCount, endCount, ready,
     currentPlayer: 0, lastDicePlayer: 0,
     diceValue: null, isRolling: false, winner: null,
-    message: "红方先手 · 点击骰子开始", popupMessage: null,
+    message: "红方先手 · 掷 1、2、3 出发", popupMessage: null,
   };
 }
 
 // ============================================================
 // Move logic
 // ============================================================
+
+function knockbackTo(steps: number): number {
+  return steps >= HALFWAY_INDEX ? HALFWAY_INDEX : START_INDEX;
+}
 
 export function applyMove(state: GameState, diceValue: number, cells: Cell[], players: Player[]): GameState {
   const playerIdx = state.currentPlayer;
@@ -241,18 +245,37 @@ export function applyMove(state: GameState, diceValue: number, cells: Cell[], pl
   const piece = state.pieces[playerIdx];
   const playerCount = players.length;
 
+  // Departure rule: must roll 1, 2, or 3 to leave start
+  const isReady = state.ready[playerIdx];
+  if (!isReady) {
+    const newReady = [...state.ready];
+    if (diceValue >= 1 && diceValue <= 3) {
+      newReady[playerIdx] = true;
+      return { ...state, ready: newReady, lastDicePlayer: playerIdx, diceValue, currentPlayer: other,
+        message: `${players[playerIdx].name}: 掷 ${diceValue}，出发！下回合开始前进 · ${nextLabel}`, popupMessage: "🚀 出发！" };
+    }
+    return { ...state, diceValue, lastDicePlayer: playerIdx, currentPlayer: other,
+      message: `${players[playerIdx].name}: 掷 ${diceValue}，需要 1、2、3 才能出发 · ${nextLabel}`, popupMessage: null };
+  }
+
   if (piece.steps + diceValue > RING_LENGTH) {
     const bouncedSteps = 2 * RING_LENGTH - piece.steps - diceValue;
     const bouncePiece = { player: playerIdx, steps: bouncedSteps };
     const bouncedIdx = getPieceCellIndex(bouncePiece, players);
     const newPieces = state.pieces.map((p, i) => i === playerIdx ? { ...p, steps: bouncedSteps } : { ...p });
+    const newReady = [...state.ready];
     for (let o = 0; o < playerCount; o++) {
       if (o === playerIdx) continue;
-      if (bouncedIdx === getPieceCellIndex(state.pieces[o], players) && !isSafe(cells[bouncedIdx]))
-        newPieces[o] = { ...newPieces[o], steps: 0 };
+      if (bouncedIdx === getPieceCellIndex(state.pieces[o], players) && !isSafe(cells[bouncedIdx])) {
+        const kb = knockbackTo(state.pieces[o].steps);
+        newPieces[o] = { ...newPieces[o], steps: kb };
+        if (kb === 0) newReady[o] = false;
+      }
     }
-    return { ...state, pieces: newPieces, diceValue, lastDicePlayer: playerIdx, currentPlayer: other,
-      message: `${players[playerIdx].name}: 掷 ${diceValue}，过终点反弹 · ${nextLabel}`, popupMessage: null };
+    const bounceCell = cells[bouncedIdx];
+    const bouncePopup = getCellContent(bounceCell);
+    return { ...state, ready: newReady, pieces: newPieces, diceValue, lastDicePlayer: playerIdx, currentPlayer: other,
+      message: `${players[playerIdx].name}: 掷 ${diceValue}，过终点反弹 · ${nextLabel}`, popupMessage: bouncePopup };
   }
 
   let newSteps = piece.steps + diceValue;
@@ -263,7 +286,15 @@ export function applyMove(state: GameState, diceValue: number, cells: Cell[], pl
     const endCount = [...state.endCount]; endCount[playerIdx]++;
     const homeCount = [...state.homeCount];
     let winner = null;
-    if (homeCount[playerIdx] > 0) { homeCount[playerIdx]--; newPieces[playerIdx] = { player: playerIdx, steps: 0 }; }
+    if (homeCount[playerIdx] > 0) {
+      homeCount[playerIdx]--;
+      newPieces[playerIdx] = { player: playerIdx, steps: 0 };
+      const newReady = [...state.ready];
+      newReady[playerIdx] = false;
+      return { ...state, ready: newReady, pieces: newPieces, homeCount, endCount, lastDicePlayer: playerIdx, diceValue, winner,
+        message: `${players[playerIdx].name}: 第 ${endCount[playerIdx]} 个棋子抵达！新棋子需重新出发 · ${nextLabel}`,
+        popupMessage: "🎉 棋子抵达终点" };
+    }
     if (endCount[playerIdx] >= PIECE_COUNT) winner = playerIdx;
     return { ...state, pieces: newPieces, homeCount, endCount, lastDicePlayer: playerIdx, diceValue, winner,
       message: winner ? `🎉 ${players[playerIdx].name}全部抵达，获胜！` : `${players[playerIdx].name}: 第 ${endCount[playerIdx]} 个棋子抵达！ · ${nextLabel}`,
@@ -290,13 +321,19 @@ export function applyMove(state: GameState, diceValue: number, cells: Cell[], pl
   const finalIdx = getPieceCellIndex({ player: playerIdx, steps: newSteps }, players);
   const newPieces = state.pieces.map((p) => p);
   newPieces[playerIdx] = { ...piece, steps: newSteps };
+  let newReady = [...state.ready];
   for (let o = 0; o < playerCount; o++) {
     if (o === playerIdx) continue;
-    if (finalIdx === getPieceCellIndex(state.pieces[o], players) && !isSafe(cells[finalIdx]))
-    { newPieces[o] = { ...newPieces[o], steps: 0 }; messages.unshift(`💥 撞飞${players[o].name}`); }
+    if (finalIdx === getPieceCellIndex(state.pieces[o], players) && !isSafe(cells[finalIdx])) {
+      const kb = knockbackTo(state.pieces[o].steps);
+      newPieces[o] = { ...newPieces[o], steps: kb };
+      if (kb === 0) newReady[o] = false; // knocked back to start, need to re-depart
+      const kbLabel = kb === 24 ? "撞回半程" : "撞回起点";
+      messages.unshift(`💥 ${kbLabel}${players[o].name}`);
+    }
   }
 
-  return { ...state, pieces: newPieces, lastDicePlayer: playerIdx, diceValue, currentPlayer: other,
+  return { ...state, ready: newReady, pieces: newPieces, lastDicePlayer: playerIdx, diceValue, currentPlayer: other,
     message: (messages.length ? `${players[playerIdx].name}: ${messages.join(" · ")} · ` : "") + nextLabel,
     popupMessage };
 }

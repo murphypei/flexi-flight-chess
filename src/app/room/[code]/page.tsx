@@ -91,7 +91,9 @@ export default function RoomPage() {
       setPlayers(gamePlayers);
 
       if (room.game_state && room.game_state.pieces) {
-        setState(room.game_state as GameState);
+        const gs = room.game_state as GameState;
+        if (!gs.ready) gs.ready = new Array(gs.pieces.length).fill(true);
+        setState(gs);
         gameStartedRef.current = true;
       } else {
         setState(initGameState(actualCount));
@@ -166,7 +168,7 @@ export default function RoomPage() {
     if (!state) return;
     gameStartedRef.current = true;
     const gamePlayers = makePlayers(activeCount);
-    const newState: GameState = { ...initGameState(activeCount), ...state, message: "游戏开始！" + gamePlayers[0].name + " 请掷骰子" };
+    const newState: GameState = { ...initGameState(activeCount), ...state, message: "游戏开始！掷 1、2、3 出发，" + gamePlayers[0].name + " 先手" };
     setState(newState);
     updateRoom(roomIdRef.current, { game_state: newState, status: "playing" }).catch(() => {});
   }
@@ -228,7 +230,7 @@ export default function RoomPage() {
             </div>
             <div>
               <p className="text-base font-bold" style={{ color: PLAYER_HEX[currentPlayer] }}>{gamePlayers[currentPlayer]?.name}回合</p>
-              <p className="text-xs text-stone-600">点击骰子</p>
+              <p className="text-xs text-stone-600">{state.message}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -270,6 +272,7 @@ export default function RoomPage() {
                       <span className="text-sm font-medium">{rp ? rp.name : "等待加入..."}</span>
                       {rp?.is_host && <span className="text-[10px] text-stone-400">房主</span>}
                       {state.currentPlayer === i && !winner && <span className="text-[10px] font-bold" style={{ color: PLAYER_HEX[p.id] }}>回合中</span>}
+                      {!state.ready?.[i] && !winner && <span className="text-[10px] text-stone-400">未出发</span>}
                     </div>
                     <span className="text-xs text-stone-600 tabular-nums">{steps === ringLen ? "🏁" : `${steps}/${ringLen}`}</span>
                   </div>
@@ -342,8 +345,9 @@ export default function RoomPage() {
               {rulesDesc && (
                 <div className="mt-3 text-xs text-stone-600 bg-stone-50 rounded-lg p-2 whitespace-pre-wrap">{rulesDesc}</div>
               )}
-              <div className="mt-3 text-xs text-stone-400">
-                碰撞规则：落在对手同一格时，将对手棋子撞回起点（安全区和起点不受碰撞）。率先将 4 个棋子全部送到终点者获胜。
+              <div className="mt-3 text-xs text-stone-400 space-y-1">
+                <p>出发规则：棋子初始为准备状态，需掷出 1、2、3 才能出发。出发当回合留在起点，下回合开始前进。</p>
+                <p>碰撞规则：踩到对手格→对手回退。未过半程（24格前）的棋子撞回起点；已过半程的棋子撞回半程（黄色格）。安全区和起点不受碰撞。</p>
               </div>
             </div>
           )}
